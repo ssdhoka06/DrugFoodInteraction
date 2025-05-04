@@ -1,3 +1,5 @@
+
+
 import pandas as pd
 import numpy as np
 import joblib
@@ -5,31 +7,47 @@ import pickle
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch_geometric.nn import GCNConv, GATConv
-from torch_geometric.data import Data
+from torch_geometric.nn import GCNConv
+from torch_geometric.data import Data, DataLoader
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import train_test_split
-from imblearn.over_sampling import SMOTE
+import os
+import time
+
+# Set PyTorch to use MPS for Apple Silicon if available
+print("PyTorch version:", torch.__version__)
+print("CUDA available:", torch.cuda.is_available())  
+print("MPS available:", torch.backends.mps.is_available())
+
+# Check if output files exist and remove them to avoid errors
+for file_path in ['food_drug_rf_model.pkl', 'food_drug_encodings.pkl', 
+                  'food_drug_gnn_model.pt', 'food_drug_graph_mappings.pkl']:
+    if os.path.exists(file_path):
+        os.remove(file_path)
+        print(f"Removed existing file: {file_path}")
 
 # Part 1: Load and prepare the SMOTE-balanced data
-print("Loading SMOTE-balanced training data...")
+print("\nLoading SMOTE-balanced training data...")
 smote_train = pd.read_csv('/Users/sachidhoka/Desktop/Drug Food/food_drug_analysis/smote_training_data.csv')
 X_smote = smote_train[['food_encoded', 'drug_encoded']]
 y_smote = smote_train['has_interaction']
+print(f"SMOTE data shape: {X_smote.shape}")
 
 # Part 2: Train Random Forest model as before
-print("Training Random Forest model...")
+print("\nTraining Random Forest model...")
+start_time = time.time()
 rf_model = RandomForestClassifier(n_estimators=100, random_state=42)
 rf_model.fit(X_smote, y_smote)
+print(f"Random Forest training completed in {time.time() - start_time:.2f} seconds")
 
 # Save the Random Forest model
 joblib.dump(rf_model, 'food_drug_rf_model.pkl')
 print("Random Forest model saved to 'food_drug_rf_model.pkl'")
 
-# Part 3: Create encoders for user input (as before)
-print("Creating lookup encoders for user input...")
+# Part 3: Create encoders for user input
+print("\nCreating lookup encoders for user input...")
 # Load the model_ready dataset with text and encoded values
 model_ready = pd.read_csv('/Users/sachidhoka/Desktop/Drug Food/food_drug_analysis/model_ready_food_drug_interactions.csv')
+print(f"Model ready data shape: {model_ready.shape}")
 
 # Create mappings from text to encoding
 food_to_encoding = dict(zip(model_ready['food'], model_ready['food_encoded']))
@@ -49,34 +67,26 @@ with open('food_drug_encodings.pkl', 'wb') as f:
     }, f)
 print("Encoders saved to 'food_drug_encodings.pkl'")
 
-# Part 4: Implement and train a Graph Neural Network (GNN)
-print("Preparing data for Graph Neural Network...")
+# Part 4: Implement and train an optimized Graph Neural Network (GNN)
+print("\nPreparing data for Graph Neural Network...")
 
-# Define a GNN model using PyTorch Geometric
+# Define a simplified GNN model using PyTorch Geometric
 class FoodDrugGNN(torch.nn.Module):
-    def __init__(self, num_food_nodes, num_drug_nodes, hidden_channels):
+    def __init__(self, input_dim, hidden_channels, output_dim=1):
         super(FoodDrugGNN, self).__init__()
-        # GCN layers
-        self.conv1 = GCNConv(2, hidden_channels)  # 2 features: node type (food/drug) and node ID
+        # Simplified architecture with fewer layers
+        self.conv1 = GCNConv(input_dim, hidden_channels)
         self.conv2 = GCNConv(hidden_channels, hidden_channels)
-        
-        # Output layer
-        self.out = nn.Linear(hidden_channels * 2, 1)  # Concatenate features of both nodes
+        self.out = nn.Linear(hidden_channels * 2, output_dim)
     
     def forward(self, x, edge_index):
         # Apply GNN layers
-        x = self.conv1(x, edge_index)
-        x = F.relu(x)
-        x = F.dropout(x, p=0.3, training=self.training)
+        x = F.relu(self.conv1(x, edge_index))
+        x = F.dropout(x, p=0.2, training=self.training)
         x = self.conv2(x, edge_index)
-        x = F.relu(x)
-        
         return x
     
-    def predict_pair(self, x, edge_index, food_idx, drug_idx):
-        # Get node embeddings
-        node_embeddings = self.forward(x, edge_index)
-        
+    def predict_pair(self, node_embeddings, food_idx, drug_idx):
         # Extract embeddings for the specific food and drug
         food_embedding = node_embeddings[food_idx]
         drug_embedding = node_embeddings[drug_idx]
@@ -87,12 +97,17 @@ class FoodDrugGNN(torch.nn.Module):
         
         return torch.sigmoid(prediction)
 
-# Build a graph from the food-drug interaction data
-def build_graph_from_data(smote_data, model_ready_data):
+# Build a smaller graph from the food-drug interaction data
+def build_graph_from_data(model_ready_data, max_pairs=10000):
+    print("Building graph from interaction data...")
+    
     # Get unique foods and drugs with their encodings
-    # Make sure we're using integers for the encoded values
-    unique_foods = set(int(id) for id in model_ready_data['food_encoded'].unique())
-    unique_drugs = set(int(id) for id in model_ready_data['drug_encoded'].unique())
+    # Ensure integers for node IDs
+    unique_foods = sorted(set(int(id) for id in model_ready_data['food_encoded'].unique()))
+    unique_drugs = sorted(set(int(id) for id in model_ready_data['drug_encoded'].unique()))
+    
+    print(f"Number of unique foods: {len(unique_foods)}")
+    print(f"Number of unique drugs: {len(unique_drugs)}")
     
     # Create nodes for foods and drugs
     num_food_nodes = len(unique_foods)
@@ -103,115 +118,157 @@ def build_graph_from_data(smote_data, model_ready_data):
     x = torch.zeros((total_nodes, 2), dtype=torch.float)
     
     # Food nodes have type 0, drug nodes have type 1
-    # First num_food_nodes are foods, the rest are drugs
     food_mapping = {food_id: idx for idx, food_id in enumerate(unique_foods)}
     drug_mapping = {drug_id: idx + num_food_nodes for idx, drug_id in enumerate(unique_drugs)}
     
     # Set node features
-    food_list = list(unique_foods)
-    drug_list = list(unique_drugs)
-    max_food_id = max(food_list) if food_list else 1  # Avoid division by zero
-    max_drug_id = max(drug_list) if drug_list else 1  # Avoid division by zero
+    max_food_id = max(unique_foods) if unique_foods else 1
+    max_drug_id = max(unique_drugs) if unique_drugs else 1
     
-    for i in range(num_food_nodes):
+    for i, food_id in enumerate(unique_foods):
         x[i, 0] = 0  # Node type: food
-        x[i, 1] = float(food_list[i]) / max_food_id if max_food_id > 0 else 0  # Normalized node ID
+        x[i, 1] = float(food_id) / max_food_id  # Normalized node ID
     
-    for i in range(num_drug_nodes):
+    for i, drug_id in enumerate(unique_drugs):
         x[i + num_food_nodes, 0] = 1  # Node type: drug
-        x[i + num_food_nodes, 1] = float(drug_list[i]) / max_drug_id if max_drug_id > 0 else 0  # Normalized node ID
+        x[i + num_food_nodes, 1] = float(drug_id) / max_drug_id  # Normalized node ID
     
-    # Create edges based on interactions in training data
-    edge_list = []
-    edge_attr = []  # 1 for interaction, 0 for no interaction
-    
-    # Add edges for all food-drug pairs in the dataset
-    for _, row in model_ready_data.iterrows():
-        food_idx = food_mapping[row['food_encoded']]
-        drug_idx = drug_mapping[row['drug_encoded']]
+    # Create edges - limit to max_pairs to reduce memory usage
+    subset_data = model_ready_data
+    if len(model_ready_data) > max_pairs:
+        # Balance positive and negative examples
+        pos_samples = model_ready_data[model_ready_data['has_interaction'] == 1]
+        neg_samples = model_ready_data[model_ready_data['has_interaction'] == 0]
         
-        # Add edge from food to drug
-        edge_list.append([food_idx, drug_idx])
-        edge_attr.append(row['has_interaction'])
+        pos_sample_count = min(max_pairs // 2, len(pos_samples))
+        neg_sample_count = min(max_pairs - pos_sample_count, len(neg_samples))
         
-        # Add edge from drug to food (making it undirected)
-        edge_list.append([drug_idx, food_idx])
-        edge_attr.append(row['has_interaction'])
+        subset_pos = pos_samples.sample(pos_sample_count, random_state=42)
+        subset_neg = neg_samples.sample(neg_sample_count, random_state=42)
+        subset_data = pd.concat([subset_pos, subset_neg])
     
-    edge_index = torch.tensor(edge_list, dtype=torch.long).t().contiguous()
-    edge_attr = torch.tensor(edge_attr, dtype=torch.float)
+    # Create edges based on interactions
+    print(f"Creating edges from {len(subset_data)} interactions...")
+    edge_indices = []
+    edge_attrs = []
+    
+    for _, row in subset_data.iterrows():
+        try:
+            food_idx = food_mapping[int(row['food_encoded'])]
+            drug_idx = drug_mapping[int(row['drug_encoded'])]
+            
+            # Add directed edges in both directions
+            edge_indices.append([food_idx, drug_idx])
+            edge_attrs.append(float(row['has_interaction']))
+            
+            edge_indices.append([drug_idx, food_idx]) 
+            edge_attrs.append(float(row['has_interaction']))
+        except KeyError as e:
+            # Skip pairs with missing mappings
+            continue
+    
+    edge_index = torch.tensor(edge_indices, dtype=torch.long).t().contiguous()
+    edge_attr = torch.tensor(edge_attrs, dtype=torch.float)
+    
+    print(f"Graph created with {x.shape[0]} nodes and {len(edge_indices)} edges")
     
     return Data(x=x, edge_index=edge_index, edge_attr=edge_attr), food_mapping, drug_mapping
 
-print("Building graph from interaction data...")
-graph_data, food_mapping, drug_mapping = build_graph_from_data(smote_train, model_ready)
+# Build the graph with limited size
+graph_data, food_mapping, drug_mapping = build_graph_from_data(model_ready, max_pairs=5000)
 
-# Train the GNN model
-print("Training Graph Neural Network model...")
-device = torch.device('mps' if torch.backends.mps.is_available() else 'cpu')
-model = FoodDrugGNN(len(food_mapping), len(drug_mapping), hidden_channels=64).to(device)
-optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+# Determine device - try MPS first, fallback to CPU if needed
+if torch.backends.mps.is_available():
+    device = torch.device('mps')
+    print("Using MPS (Apple GPU)")
+else:
+    device = torch.device('cpu')
+    print("Using CPU")
 
-# Use BCEWithLogitsLoss instead of BCELoss to handle the sigmoid internally
-criterion = torch.nn.BCEWithLogitsLoss()
+# Train the GNN model with performance optimizations
+print("\nTraining Graph Neural Network model...")
+start_time = time.time()
 
+# Move data to device
 graph_data = graph_data.to(device)
 
-# Prepare data for batch training
-all_pairs = []
-all_targets = []
+# Initialize model
+model = FoodDrugGNN(input_dim=2, hidden_channels=32).to(device)
+optimizer = torch.optim.Adam(model.parameters(), lr=0.01, weight_decay=5e-4)
+criterion = torch.nn.BCEWithLogitsLoss()
 
-for _, row in smote_train.iterrows():
-    food_idx = food_mapping[row['food_encoded']]
-    drug_idx = drug_mapping[row['drug_encoded']]
-    all_pairs.append((food_idx, drug_idx))
-    all_targets.append(row['has_interaction'])
+# Prepare training pairs
+print("Preparing training pairs...")
+train_pairs = []
+train_labels = []
 
-all_targets = torch.tensor(all_targets, dtype=torch.float).to(device)
+# Limit to 5000 training pairs for faster training
+sample_size = min(5000, len(smote_train))
+sample_data = smote_train.sample(sample_size, random_state=42)
 
-# Training loop with batch processing
+for _, row in sample_data.iterrows():
+    try:
+        food_idx = food_mapping[int(row['food_encoded'])]
+        drug_idx = drug_mapping[int(row['drug_encoded'])]
+        train_pairs.append((food_idx, drug_idx))
+        train_labels.append(float(row['has_interaction']))
+    except KeyError:
+        # Skip pairs not in the mapping
+        continue
+
+train_labels = torch.tensor(train_labels, dtype=torch.float).to(device)
+print(f"Training with {len(train_pairs)} pairs")
+
+# Training loop with optimization
 model.train()
-total_epochs = 200
-batch_size = 32  # Adjust based on your dataset size
-for epoch in range(total_epochs):
+batch_size = 64  # Larger batch size for better GPU utilization
+epochs = 50      # Fewer epochs for faster training
+
+for epoch in range(epochs):
     optimizer.zero_grad()
     
     # Forward pass - get node embeddings
     node_embeddings = model(graph_data.x, graph_data.edge_index)
     
     # Process in batches
-    total_loss = 0
-    num_batches = (len(all_pairs) + batch_size - 1) // batch_size  # Ceiling division
+    epoch_loss = 0
+    num_batches = (len(train_pairs) + batch_size - 1) // batch_size
     
     for i in range(num_batches):
         start_idx = i * batch_size
-        end_idx = min((i + 1) * batch_size, len(all_pairs))
+        end_idx = min((i + 1) * batch_size, len(train_pairs))
         
-        batch_predictions = []
+        # Collect predictions for this batch
+        batch_logits = []
+        
         for j in range(start_idx, end_idx):
-            food_idx, drug_idx = all_pairs[j]
-            food_embedding = node_embeddings[food_idx]
-            drug_embedding = node_embeddings[drug_idx]
-            pair_embedding = torch.cat([food_embedding, drug_embedding], dim=0)
-            pred = model.out(pair_embedding)
-            batch_predictions.append(pred)
+            food_idx, drug_idx = train_pairs[j]
+            food_embed = node_embeddings[food_idx]
+            drug_embed = node_embeddings[drug_idx]
+            
+            # Concatenate embeddings
+            pair_embed = torch.cat([food_embed, drug_embed])
+            logit = model.out(pair_embed)
+            batch_logits.append(logit)
         
-        # Stack predictions into a tensor
-        batch_predictions = torch.cat(batch_predictions)
-        batch_targets = all_targets[start_idx:end_idx]
+        # Stack all logits and compute loss
+        batch_logits = torch.cat(batch_logits)
+        batch_labels = train_labels[start_idx:end_idx]
         
-        # Calculate loss
-        loss = criterion(batch_predictions, batch_targets)
-        total_loss += loss.item()
+        loss = criterion(batch_logits, batch_labels)
+        epoch_loss += loss.item()
         
-        # Backward pass
-        loss.backward(retain_graph=(i < num_batches-1))  # Retain graph except for last batch
+        # Backpropagation
+        loss.backward(retain_graph=(i < num_batches-1))
     
-    # Step optimizer
+    # Update weights
     optimizer.step()
     
-    if (epoch + 1) % 20 == 0:
-        print(f"Epoch {epoch+1}/{total_epochs}, Loss: {total_loss/num_batches:.4f}")
+    if (epoch + 1) % 5 == 0:
+        avg_loss = epoch_loss / num_batches
+        print(f"Epoch {epoch+1}/{epochs}, Loss: {avg_loss:.4f}")
+
+print(f"GNN training completed in {time.time() - start_time:.2f} seconds")
 
 # Save the GNN model
 torch.save(model.state_dict(), 'food_drug_gnn_model.pt')
@@ -225,8 +282,8 @@ with open('food_drug_graph_mappings.pkl', 'wb') as f:
     }, f)
 print("Graph mappings saved to 'food_drug_graph_mappings.pkl'")
 
-# Part 5: Create a unified prediction function that uses both models
-def predict_interaction(food_text, drug_text, rf_threshold=0.5, gnn_threshold=0.5, ensemble_weight=0.5):
+# Part 5: Create an optimized prediction function using both models
+def predict_interaction(food_text, drug_text, rf_threshold=0.5, ensemble_weight=0.7):
     """
     Predict food-drug interaction using both Random Forest and GNN models
     
@@ -234,87 +291,100 @@ def predict_interaction(food_text, drug_text, rf_threshold=0.5, gnn_threshold=0.
     food_text: Text name of the food
     drug_text: Text name of the drug
     rf_threshold: Threshold for Random Forest prediction
-    gnn_threshold: Threshold for GNN prediction  
     ensemble_weight: Weight for Random Forest (1-weight used for GNN)
     
     Returns:
-    is_interaction: Boolean indicating predicted interaction
-    rf_prob: Random Forest probability
-    gnn_prob: GNN probability
-    ensemble_prob: Weighted ensemble probability
+    Dictionary with prediction results
     """
-    # Load encoders
-    with open('food_drug_encodings.pkl', 'rb') as f:
-        encoders = pickle.load(f)
+    results = {
+        "food": food_text,
+        "drug": drug_text,
+        "rf_prob": 0,
+        "gnn_prob": 0,
+        "ensemble_prob": 0,
+        "predicted_interaction": False,
+        "status": "Unknown error"
+    }
     
-    # Get encodings
+    # Load encoders
     try:
+        with open('food_drug_encodings.pkl', 'rb') as f:
+            encoders = pickle.load(f)
+        
+        # Get encodings
+        if food_text not in encoders['food_to_encoding']:
+            results["status"] = f"Food '{food_text}' not found in training data"
+            return results
+            
+        if drug_text not in encoders['drug_to_encoding']:
+            results["status"] = f"Drug '{drug_text}' not found in training data"
+            return results
+            
         food_encoded = encoders['food_to_encoding'][food_text]
         drug_encoded = encoders['drug_to_encoding'][drug_text]
-    except KeyError:
-        return None, 0, 0, 0, "Food or drug not found in training data"
-    
-    # Random Forest prediction
-    rf_model = joblib.load('food_drug_rf_model.pkl')
-    rf_input = pd.DataFrame([[food_encoded, drug_encoded]], columns=['food_encoded', 'drug_encoded'])
-    rf_prob = rf_model.predict_proba(rf_input)[0][1]  # Probability of class 1
-    
-    # GNN prediction
-    device = torch.device('mps' if torch.backends.mps.is_available() else 'cpu')
-    
-    # Load the GNN model
-    model = FoodDrugGNN(0, 0, hidden_channels=64).to(device)  # Placeholder values
-    model.load_state_dict(torch.load('food_drug_gnn_model.pt'))
-    model.eval()
-    
-    # Load graph mappings
-    with open('food_drug_graph_mappings.pkl', 'rb') as f:
-        graph_mappings = pickle.load(f)
-    
-    # Get node indices
-    try:
-        food_idx = graph_mappings['food_mapping'][food_encoded]
-        drug_idx = graph_mappings['drug_mapping'][drug_encoded]
         
-        # Load graph data - we need to load these data files again
-        smote_train = pd.read_csv('/Users/sachidhoka/Desktop/Drug Food/food_drug_analysis/smote_training_data.csv')
-        model_ready = pd.read_csv('/Users/sachidhoka/Desktop/Drug Food/food_drug_analysis/model_ready_food_drug_interactions.csv')
-        graph_data, _, _ = build_graph_from_data(smote_train, model_ready)
-        graph_data = graph_data.to(device)
+        # Random Forest prediction
+        rf_model = joblib.load('food_drug_rf_model.pkl')
+        rf_input = pd.DataFrame([[food_encoded, drug_encoded]], columns=['food_encoded', 'drug_encoded'])
+        rf_prob = rf_model.predict_proba(rf_input)[0][1]  # Probability of class 1
+        results["rf_prob"] = float(rf_prob)
         
-        # Get prediction
-        with torch.no_grad():
-            node_embeddings = model(graph_data.x, graph_data.edge_index)
-            food_embedding = node_embeddings[food_idx]
-            drug_embedding = node_embeddings[drug_idx]
-            pair_embedding = torch.cat([food_embedding, drug_embedding], dim=0)
-            logit = model.out(pair_embedding)
-            gnn_prob = torch.sigmoid(logit).item()
-    except KeyError:
-        gnn_prob = 0
-        return None, rf_prob, gnn_prob, 0, "Food or drug not found in GNN data"
+        # Determine device
+        if torch.backends.mps.is_available():
+            device = torch.device('mps')
+        else:
+            device = torch.device('cpu')
+        
+        # Load the GNN model
+        with open('food_drug_graph_mappings.pkl', 'rb') as f:
+            graph_mappings = pickle.load(f)
+        
+        model = FoodDrugGNN(input_dim=2, hidden_channels=32).to(device)
+        model.load_state_dict(torch.load('food_drug_gnn_model.pt'))
+        model.eval()
+        
+        # Get node indices
+        try:
+            food_idx = graph_mappings['food_mapping'][int(food_encoded)]
+            drug_idx = graph_mappings['drug_mapping'][int(drug_encoded)]
+            
+            # Load graph data
+            graph_data, _, _ = build_graph_from_data(model_ready, max_pairs=5000)
+            graph_data = graph_data.to(device)
+            
+            # Make prediction
+            with torch.no_grad():
+                node_embeddings = model(graph_data.x, graph_data.edge_index)
+                gnn_prob = model.predict_pair(node_embeddings, food_idx, drug_idx).item()
+                results["gnn_prob"] = float(gnn_prob)
+        except KeyError:
+            results["status"] = "Food or drug not in GNN graph data"
+            results["gnn_prob"] = 0.5  # Neutral prediction
+        
+        # Ensemble prediction
+        ensemble_prob = ensemble_weight * rf_prob + (1 - ensemble_weight) * results["gnn_prob"]
+        results["ensemble_prob"] = float(ensemble_prob)
+        results["predicted_interaction"] = ensemble_prob >= 0.5
+        results["status"] = "Success"
+        
+    except Exception as e:
+        results["status"] = f"Error: {str(e)}"
     
-    # Ensemble prediction
-    ensemble_prob = ensemble_weight * rf_prob + (1 - ensemble_weight) * gnn_prob
-    
-    # Make final prediction
-    is_interaction = ensemble_prob >= 0.5
-    
-    return is_interaction, rf_prob, gnn_prob, ensemble_prob, "Success"
+    return results
 
-# Example of using the combined prediction function
-if __name__ == "__main__":
-    print("\nTesting combined prediction function:")
-    food = "grapefruit"  # Example food
-    drug = "simvastatin"  # Example drug
-    
-    result, rf_prob, gnn_prob, ensemble_prob, msg = predict_interaction(food, drug)
-    
-    if msg == "Success":
-        print(f"Food: {food}, Drug: {drug}")
-        print(f"Random Forest probability: {rf_prob:.4f}")
-        print(f"GNN probability: {gnn_prob:.4f}")
-        print(f"Ensemble probability: {ensemble_prob:.4f}")
-        print(f"Predicted interaction: {result}")
-    else:
-        print(f"Error: {msg}")
+# Test the prediction with a few examples
+print("\nTesting prediction functionality:")
+examples = [
+    ("grapefruit", "simvastatin"),  # Known interaction
+    ("apple", "aspirin"),           # Likely no interaction
+]
+
+for food, drug in examples:
+    print(f"\nPredicting interaction between {food} and {drug}:")
+    result = predict_interaction(food, drug)
+    print(f"Status: {result['status']}")
+    if result['status'] == 'Success':
+        print(f"RF Probability: {result['rf_prob']:.4f}")
+        print(f"GNN Probability: {result['gnn_prob']:.4f}")
+        print(f"Ensemble: {result['ensemble_prob']:.4f}")
+        print(f"Predicted Interaction: {result['predicted_interaction']}")

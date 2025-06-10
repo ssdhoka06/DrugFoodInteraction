@@ -3,6 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.model_selection import train_test_split, cross_val_score, StratifiedKFold
+from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.ensemble import ExtraTreesClassifier, VotingClassifier, RandomForestClassifier
 from sklearn.neural_network import MLPClassifier
 from sklearn.metrics import (classification_report, confusion_matrix, roc_auc_score, 
@@ -174,11 +175,12 @@ def get_interaction_details(drug_cat, food_cat):
 print("🏷️ Categorizing drugs and foods...")
 df_clean['drug_category'] = df_clean['drug'].apply(lambda x: categorize_entity(x, drug_categories))
 df_clean['food_category'] = df_clean['food'].apply(lambda x: categorize_entity(x, food_categories))
-df_clean[['mechanism', 'risk_level']] = df_clean.apply(
-    lambda x: pd.Series(get_interaction_details(x['drug_category'], x['food_category'])), 
+interaction_details = df_clean.apply(
+    lambda x: get_interaction_details(x['drug_category'], x['food_category']), 
     axis=1
 )
-
+df_clean['mechanism'] = [details[0] for details in interaction_details]
+df_clean['risk_level'] = [details[1] for details in interaction_details]
 print("\nDrug category distribution:")
 print(df_clean['drug_category'].value_counts().head(10))
 print("\nFood category distribution:")
@@ -250,6 +252,7 @@ def generate_balanced_negatives(df_positive, target_ratio=0.8):
 # Generate balanced negatives
 df_negatives = generate_balanced_negatives(df_clean, target_ratio=0.8)
 df_final = pd.concat([df_clean, df_negatives], ignore_index=True)
+df_final = df_final.reset_index(drop=True)  # Reset index after concatenation
 
 print(f"Final dataset: {len(df_final)} samples")
 print(f"Positive interactions: {len(df_clean)}")
@@ -273,9 +276,13 @@ class EPGCNClassifier(BaseEstimator, ClassifierMixin):
     def _build_similarity_graph(self, X, y):
         """Build drug-food similarity graph"""
         n_samples = X.shape[0]
+        if n_samples > 5000:
+            # Sample a subset to avoid memory issues
+            indices = np.random.choice(n_samples, 5000, replace=False)
+            X = X[indices]
+            n_samples = 5000
         
         # Create adjacency matrix based on feature similarity
-        from sklearn.metrics.pairwise import cosine_similarity
         sim_matrix = cosine_similarity(X)
         
         # Keep only top-k similarities
@@ -293,7 +300,7 @@ class EPGCNClassifier(BaseEstimator, ClassifierMixin):
         # Simplified GCN propagation: H = AXW
         normalized_adj = adj_matrix + np.eye(adj_matrix.shape[0])
         degree = np.array(normalized_adj.sum(axis=1)).flatten()
-        degree_inv_sqrt = np.power(degree, -0.5)
+        degree_inv_sqrt = np.power(degree + 1e-10, -0.5)  # Add small epsilon
         degree_inv_sqrt[np.isinf(degree_inv_sqrt)] = 0
         
         # D^(-1/2) * A * D^(-1/2)
@@ -320,7 +327,6 @@ class EPGCNClassifier(BaseEstimator, ClassifierMixin):
             h = np.tanh(h)
         
         # Final classification layer (using logistic regression)
-        from sklearn.linear_model import LogisticRegression
         self.classifier = LogisticRegression(random_state=42)
         self.classifier.fit(h, y)
         
@@ -328,7 +334,6 @@ class EPGCNClassifier(BaseEstimator, ClassifierMixin):
     
     def predict(self, X):
         """Predict using EPGCN"""
-        # For prediction, we use the original features (simplified)
         return self.classifier.predict(X)
     
     def predict_proba(self, X):
@@ -378,7 +383,6 @@ class MRGNNClassifier(BaseEstimator, ClassifierMixin):
         aggregated_features /= (len(relation_graphs) + 1)
         
         # Train classifier on aggregated features
-        from sklearn.ensemble import RandomForestClassifier
         self.classifier = RandomForestClassifier(n_estimators=100, random_state=42)
         self.classifier.fit(aggregated_features, y)
         
@@ -478,6 +482,10 @@ print("-" * 40)
 def create_enhanced_features(df):
     """Create comprehensive feature set"""
     
+    # Initialize TF-IDF vectorizers
+    drug_tfidf = TfidfVectorizer(max_features=50, ngram_range=(1, 2), stop_words='english')
+    food_tfidf = TfidfVectorizer(max_features=50, ngram_range=(1, 2), stop_words='english')
+    
     # 1. Basic categorical features
     drug_dummies = pd.get_dummies(df['drug_category'], prefix='drug').astype(int)
     food_dummies = pd.get_dummies(df['food_category'], prefix='food').astype(int)
@@ -505,20 +513,25 @@ def create_enhanced_features(df):
     # Combine drug and food names for text analysis
     df['combined_text'] = df['drug'] + ' ' + df['food']
     
-    # TF-IDF for drug names
-    drug_tfidf = TfidfVectorizer(max_features=50, ngram_range=(1, 2), stop_words='english')
-    drug_tfidf_features = drug_tfidf.fit_transform(df['drug'])
-    
-    # TF-IDF for food names
-    food_tfidf = TfidfVectorizer(max_features=50, ngram_range=(1, 2), stop_words='english')
-    food_tfidf_features = food_tfidf.fit_transform(df['food'])
+    # TF-IDF for drug and food names
+    try:
+        drug_tfidf_features = drug_tfidf.fit_transform(df['drug'])
+        food_tfidf_features = food_tfidf.fit_transform(df['food'])
+    except ValueError:
+        # Fallback if TF-IDF fails
+        drug_tfidf_features = np.zeros((len(df), 50))
+        food_tfidf_features = np.zeros((len(df), 50))
     
     # Reduce dimensionality
     svd_drug = TruncatedSVD(n_components=10, random_state=42)
     svd_food = TruncatedSVD(n_components=10, random_state=42)
     
-    drug_features = svd_drug.fit_transform(drug_tfidf_features)
-    food_features = svd_food.fit_transform(food_tfidf_features)
+    try:
+        drug_features = svd_drug.fit_transform(drug_tfidf_features)
+        food_features = svd_food.fit_transform(food_tfidf_features)
+    except ValueError:
+        drug_features = np.zeros((len(df), 10))
+        food_features = np.zeros((len(df), 10))
     
     # Convert to DataFrames
     drug_text_df = pd.DataFrame(drug_features, columns=[f'drug_text_{i}' for i in range(10)])
@@ -616,7 +629,6 @@ def evaluate_model(y_true, y_pred, y_pred_proba, model_name):
     }
     return metrics
 
-# Continuing from the confusion matrix plotting function
 def plot_confusion_matrix(y_true, y_pred, model_name):
     """Plot confusion matrix"""
     cm = confusion_matrix(y_true, y_pred)
@@ -776,8 +788,6 @@ dfims_model = DFIMSClassifier(
 )
 models['DFI-MS'] = dfims_model
 
-# Note: Voting Classifier will be created after individual models are trained
-
 # Train and evaluate all models
 print("\n🚀 TRAINING AND EVALUATION")
 print("=" * 50)
@@ -791,9 +801,8 @@ for model_name, model in models.items():
     try:
         # Choose appropriate data based on model type
         if model_name in ['MLP']:
-            # Use scaled data for MLP
-            X_train_use = X_train_scaled
-            X_test_use = X_test_scaled
+            X_train_use = pd.DataFrame(X_train_scaled, columns=X_train.columns)
+            X_test_use = pd.DataFrame(X_test_scaled, columns=X_test.columns)
         else:
             # Use original data for tree-based and specialized models
             X_train_use = X_train
@@ -849,11 +858,16 @@ for model_name in ['Random Forest', 'Extra Trees', 'LightGBM', 'CatBoost']:
 if 'XGBoost' in trained_models:
     voting_models.append(('XGBoost', trained_models['XGBoost']))
 
-if len(voting_models) >= 2:
+valid_voting_models = []
+for name, model in voting_models:
+    if hasattr(model, 'predict_proba'):
+        valid_voting_models.append((name, model))
+
+if len(valid_voting_models) >= 2:
     try:
         # Create voting classifier
         voting_clf = VotingClassifier(
-            estimators=voting_models,
+            estimators=valid_voting_models,
             voting='soft'  # Use probability voting
         )
         
@@ -882,7 +896,7 @@ if len(voting_models) >= 2:
     except Exception as e:
         print(f"❌ Error training Voting Classifier: {str(e)}")
 else:
-    print("❌ Not enough models for Voting Classifier")
+    print("❌ Not enough models with predict_proba for Voting Classifier")
 
 # Create results DataFrame
 results_df = pd.DataFrame(results)
@@ -956,8 +970,8 @@ for model_name in top_3_models:
         model = models[model_name]
         
         # Choose appropriate test data
-        if model_name in ['SVM', 'Logistic Regression', 'Neural Network']:
-            X_test_use = X_test_scaled
+        if model_name == 'MLP':
+            X_test_use = pd.DataFrame(X_test_scaled, columns=X_test.columns)
         else:
             X_test_use = X_test
             
@@ -1093,16 +1107,20 @@ def predict_new_interaction(drug_name, food_name, model=None, return_risk=True):
         axis=1
     )
     
-    # Create features (simplified version)
+    # Create features
     try:
         X_new, _ = create_enhanced_features(new_df)
+        # Ensure all required columns exist
+        for col in feature_info['feature_names']:
+            if col not in X_new.columns:
+                X_new[col] = 0
+
+        # Ensure same order and only required columns
+        X_new = X_new.reindex(columns=feature_info['feature_names'], fill_value=0)
         
-        # Ensure same feature structure
-        missing_cols = set(feature_info['feature_names']) - set(X_new.columns)
-        for col in missing_cols:
-            X_new[col] = 0
-        
-        X_new = X_new[feature_info['feature_names']]  # Reorder columns
+        # Scale features if needed
+        if model.__class__.__name__ == 'MLPClassifier':
+            X_new = scaler.transform(X_new)
         
         # Make prediction
         prediction = model.predict(X_new)[0]

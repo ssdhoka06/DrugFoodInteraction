@@ -36,7 +36,7 @@ def load_and_clean_foodrugs(filepath=None):
     
     if filepath is None:
         # filepath = '/Users/sachidhoka/Desktop/food-drug interactions.csv'
-        filepath ='/content/drive/MyDrive/ASEP_2/food-drug-interactions.csv'
+        filepath ='/content/drive/MyDrive/ASEP_2/food-drug interactions.csv'
     
     try:
         # Try different encodings with error handling
@@ -345,35 +345,24 @@ gb_model.fit(X_train, y_train)
 gb_pred = gb_model.predict(X_test)
 gb_pred_proba = gb_model.predict_proba(X_test)[:, 1]
 
-# Support Vector Machine with balanced class weights
-print("🤖 Training SVM model...")
-svm_model = SVC(
-    kernel='rbf',
-    class_weight='balanced',
-    probability=True,
-    random_state=42
-)
-svm_model.fit(X_train, y_train)
-svm_pred = svm_model.predict(X_test)
-svm_pred_proba = svm_model.predict_proba(X_test)[:, 1]
 
 # Calculate AUC scores for all models
 xgb_auc = roc_auc_score(y_test, xgb_pred_proba)
 rf_auc = roc_auc_score(y_test, rf_pred_proba)
 gb_auc = roc_auc_score(y_test, gb_pred_proba)
-svm_auc = roc_auc_score(y_test, svm_pred_proba)
+
 
 print(f"XGBoost ROC-AUC: {xgb_auc:.3f}")
 print(f"Random Forest ROC-AUC: {rf_auc:.3f}")
 print(f"Gradient Boosting ROC-AUC: {gb_auc:.3f}")
-print(f"SVM ROC-AUC: {svm_auc:.3f}")
+
 
 # Compare all models
 all_models = [
     (xgb_model, xgb_pred, xgb_pred_proba, xgb_auc, "XGBoost"),
     (rf_model, rf_pred, rf_pred_proba, rf_auc, "Random Forest"),
     (gb_model, gb_pred, gb_pred_proba, gb_auc, "Gradient Boosting"),
-    (svm_model, svm_pred, svm_pred_proba, svm_auc, "SVM")
+
 ]
 
 # Choose best model

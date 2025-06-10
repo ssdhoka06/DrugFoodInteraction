@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
+from sklearn.base import BaseEstimator, ClassifierMixin, clone
 from sklearn.model_selection import train_test_split, cross_val_score, StratifiedKFold
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.ensemble import ExtraTreesClassifier, VotingClassifier, RandomForestClassifier
@@ -266,11 +267,10 @@ print("-" * 40)
 class EPGCNClassifier(BaseEstimator, ClassifierMixin):
     """Enhanced Propagation Graph Convolutional Network - Drug Similarity (EPGCN-DS)"""
     
-    def __init__(self, n_layers=3, hidden_dim=64, learning_rate=0.01, epochs=100):
-        self.n_layers = n_layers
-        self.hidden_dim = hidden_dim
-        self.learning_rate = learning_rate
-        self.epochs = epochs
+    def __init__(self, scales=[1, 2, 4], base_estimator=None):
+        self.scales = scales
+        self.base_estimator = base_estimator or RandomForestClassifier(n_estimators=100, random_state=42)
+        self.scale_classifiers = {}
         self.classes_ = None
         
     def _build_similarity_graph(self, X, y):
@@ -435,7 +435,6 @@ class DFIMSClassifier(BaseEstimator, ClassifierMixin):
             X_scale = self._create_multi_scale_features(X, scale)
             
             # Clone base estimator
-            from sklearn.base import clone
             classifier = clone(self.base_estimator)
             classifier.fit(X_scale, y)
             

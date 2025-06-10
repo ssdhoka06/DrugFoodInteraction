@@ -2,10 +2,11 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-from sklearn.model_selection import train_test_split, cross_val_score
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split, cross_val_score, StratifiedKFold
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score, roc_curve
 from sklearn.preprocessing import LabelEncoder
+from sklearn.svm import SVC
 import xgboost as xgb
 from collections import Counter
 import pickle
@@ -26,25 +27,22 @@ print("=" * 60)
 # HOUR 1-2: EMERGENCY DATA PREP
 print("\n📋 PHASE 1: DATA PREPROCESSING (Hours 1-2)")
 print("-" * 40)
-df2 = '/Users/sachidhoka/Desktop/food-drug interactions.csv'
-try:
-    # For newer pandas versions (1.3.0+)
-    foodrugs_df = pd.read_csv(df2, on_bad_lines='skip')
-except TypeError:
-    # For older pandas versions
-    foodrugs_df = pd.read_csv(df2, error_bad_lines=False)
-def load_and_clean_foodrugs(filepath=foodrugs_df):
+
+def load_and_clean_foodrugs(filepath=None):
     """Load and clean FooDrugs dataset"""
     print("Loading FooDrugs dataset...")
     
+    if filepath is None:
+        filepath = '/Users/sachidhoka/Desktop/food-drug interactions.csv'
+    
     try:
-        # Try different encodings
+        # Try different encodings with error handling
         for encoding in ['utf-8', 'latin-1', 'cp1252']:
             try:
-                df = pd.read_csv(filepath, encoding=encoding)
+                df = pd.read_csv(filepath, encoding=encoding, on_bad_lines='skip', low_memory=False)
                 print(f"Successfully loaded with {encoding} encoding")
                 break
-            except UnicodeDecodeError:
+            except (UnicodeDecodeError, pd.errors.ParserError):
                 continue
         else:
             raise Exception("Could not load file with any encoding")
@@ -177,40 +175,49 @@ print(df_clean['food_category'].value_counts().head(10))
 # GENERATE NEGATIVE SAMPLES (Critical!)
 print("\n⚖️ Generating negative samples...")
 
-# Get unique entities (increased for better model)
+# Get unique entities (LIMITED for memory efficiency)
 unique_drugs = df_clean['drug'].unique()
 unique_foods = df_clean['food'].unique()
 
+# LIMIT the entities to prevent memory issues
+if len(unique_drugs) > 1000:
+    unique_drugs = np.random.choice(unique_drugs, 1000, replace=False)
+if len(unique_foods) > 1000:
+    unique_foods = np.random.choice(unique_foods, 1000, replace=False)
+
 print(f"Working with {len(unique_drugs)} drugs and {len(unique_foods)} foods")
 
-# Create negative samples more efficiently
-from itertools import product
 existing_interactions = set(zip(df_clean['drug'], df_clean['food']))
 
 negative_samples = []
-max_negatives = min(len(df_clean) * 3, 2000)  # Limit for performance
+max_negatives = len(df_clean)  # Match positive samples 1:1
 
-# Sample random combinations for negatives
-all_combinations = list(product(unique_drugs, unique_foods))
-np.random.shuffle(all_combinations)
+# Generate random combinations WITHOUT creating all_combinations list
+attempts = 0
+max_attempts = max_negatives * 10  # Prevent infinite loop
 
-for drug, food in all_combinations:
+# Better negative sampling strategy
+while len(negative_samples) < max_negatives and attempts < max_attempts:
+    drug = np.random.choice(unique_drugs)
+    food = np.random.choice(unique_foods)
+    attempts += 1
+    
     if (drug, food) not in existing_interactions:
         drug_cat = categorize_entity(drug, drug_categories)
         food_cat = categorize_entity(food, food_categories)
         mechanism = get_interaction_mechanism(drug_cat, food_cat)
         
-        negative_samples.append({
-            'drug': drug,
-            'food': food,
-            'interaction': 0,
-            'drug_category': drug_cat,
-            'food_category': food_cat,
-            'mechanism': mechanism
-        })
-    
-    if len(negative_samples) >= max_negatives:
-        break
+        # Only add as negative if it's truly unlikely to interact
+        # Skip combinations that should logically interact
+        if mechanism == 'unknown' and drug_cat != food_cat:
+            negative_samples.append({
+                'drug': drug,
+                'food': food,
+                'interaction': 0,
+                'drug_category': drug_cat,
+                'food_category': food_cat,
+                'mechanism': mechanism
+            })
 
 df_negatives = pd.DataFrame(negative_samples)
 df_final = pd.concat([df_clean, df_negatives], ignore_index=True)
@@ -218,7 +225,12 @@ df_final = pd.concat([df_clean, df_negatives], ignore_index=True)
 print(f"Final dataset: {len(df_final)} samples")
 print(f"Positive interactions: {len(df_clean)}")
 print(f"Negative interactions: {len(df_negatives)}")
-print(f"Balance ratio: {len(df_negatives)/len(df_clean):.2f}")
+
+# Check if we have negative samples
+if len(df_negatives) > 0:
+    print(f"Balance ratio: {len(df_negatives)/len(df_clean):.2f}")
+else:
+    print("Warning: No negative samples generated!")
 
 # HOUR 3-4: FEATURE ENGINEERING
 print("\n🔧 PHASE 2: FEATURE ENGINEERING (Hours 3-4)")
@@ -239,7 +251,6 @@ df_final['risk_score'] = df_final.apply(
     axis=1
 )
 
-# Create binary features with proper data types
 # Create binary features with proper data types
 drug_dummies = pd.get_dummies(df_final['drug_category'], prefix='drug').astype(int)
 food_dummies = pd.get_dummies(df_final['food_category'], prefix='food').astype(int)
@@ -287,14 +298,16 @@ weight_ratio = train_counts[0] / train_counts[1] if train_counts[1] > 0 else 1
 # XGBoost Model (Primary) - Fixed version
 print("\n🚀 Training XGBoost model...")
 xgb_model = xgb.XGBClassifier(
-    n_estimators=100,
-    max_depth=6,
-    learning_rate=0.1,
-    scale_pos_weight=weight_ratio,
+    n_estimators=200,
+    max_depth=8,
+    learning_rate=0.05,
+    scale_pos_weight=weight_ratio,  # Use calculated weight ratio
+    subsample=0.8,
+    colsample_bytree=0.8,
     random_state=42,
     n_jobs=-1,
-    tree_method='hist',  # Optimized for M3 chip
-    enable_categorical=False  # Explicitly disable categorical handling
+    tree_method='hist',
+    enable_categorical=False
 )
 
 xgb_model.fit(X_train, y_train)
@@ -317,27 +330,60 @@ rf_model.fit(X_train, y_train)
 rf_pred = rf_model.predict(X_test)
 rf_pred_proba = rf_model.predict_proba(X_test)[:, 1]
 
-# Model comparison
+# Gradient Boosting (often better than XGBoost for imbalanced data)
+print("🚀 Training Gradient Boosting model...")
+gb_model = GradientBoostingClassifier(
+    n_estimators=100,
+    max_depth=6,
+    learning_rate=0.1,
+    random_state=42
+)
+gb_model.fit(X_train, y_train)
+gb_pred = gb_model.predict(X_test)
+gb_pred_proba = gb_model.predict_proba(X_test)[:, 1]
+
+# Support Vector Machine with balanced class weights
+print("🤖 Training SVM model...")
+svm_model = SVC(
+    kernel='rbf',
+    class_weight='balanced',
+    probability=True,
+    random_state=42
+)
+svm_model.fit(X_train, y_train)
+svm_pred = svm_model.predict(X_test)
+svm_pred_proba = svm_model.predict_proba(X_test)[:, 1]
+
+# Calculate AUC scores for all models
 xgb_auc = roc_auc_score(y_test, xgb_pred_proba)
 rf_auc = roc_auc_score(y_test, rf_pred_proba)
+gb_auc = roc_auc_score(y_test, gb_pred_proba)
+svm_auc = roc_auc_score(y_test, svm_pred_proba)
 
-print(f"\nModel Performance:")
 print(f"XGBoost ROC-AUC: {xgb_auc:.3f}")
 print(f"Random Forest ROC-AUC: {rf_auc:.3f}")
+print(f"Gradient Boosting ROC-AUC: {gb_auc:.3f}")
+print(f"SVM ROC-AUC: {svm_auc:.3f}")
+
+# Compare all models
+all_models = [
+    (xgb_model, xgb_pred, xgb_pred_proba, xgb_auc, "XGBoost"),
+    (rf_model, rf_pred, rf_pred_proba, rf_auc, "Random Forest"),
+    (gb_model, gb_pred, gb_pred_proba, gb_auc, "Gradient Boosting"),
+    (svm_model, svm_pred, svm_pred_proba, svm_auc, "SVM")
+]
 
 # Choose best model
-if xgb_auc > rf_auc:
-    best_model = xgb_model
-    best_pred = xgb_pred
-    best_pred_proba = xgb_pred_proba
-    best_name = "XGBoost"
-else:
-    best_model = rf_model
-    best_pred = rf_pred
-    best_pred_proba = rf_pred_proba
-    best_name = "Random Forest"
+best_model, best_pred, best_pred_proba, best_auc, best_name = max(all_models, key=lambda x: x[3])
 
-print(f"Best model: {best_name}")
+print(f"\nBest model: {best_name} (AUC: {best_auc:.3f})")
+
+# Cross-validation for better model assessment
+print("\n🔄 Cross-validation scores:")
+cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+
+cv_scores = cross_val_score(best_model, X_train, y_train, cv=cv, scoring='roc_auc')
+print(f"{best_name}: {cv_scores.mean():.3f} (+/- {cv_scores.std() * 2:.3f})")
 
 # HOUR 7-8: VALIDATION AND TESTING
 print("\n📊 PHASE 4: VALIDATION (Hours 7-8)")
@@ -345,7 +391,7 @@ print("-" * 40)
 
 # Detailed evaluation
 print(f"\n{best_name} Performance Report:")
-print(f"ROC-AUC Score: {roc_auc_score(y_test, best_pred_proba):.3f}")
+print(f"ROC-AUC Score: {best_auc:.3f}")
 print("\nClassification Report:")
 print(classification_report(y_test, best_pred))
 
@@ -365,7 +411,7 @@ plt.show()
 # ROC Curve
 plt.figure(figsize=(8, 6))
 fpr, tpr, _ = roc_curve(y_test, best_pred_proba)
-plt.plot(fpr, tpr, linewidth=2, label=f'{best_name} (AUC = {roc_auc_score(y_test, best_pred_proba):.3f})')
+plt.plot(fpr, tpr, linewidth=2, label=f'{best_name} (AUC = {best_auc:.3f})')
 plt.plot([0, 1], [0, 1], 'k--', linewidth=1)
 plt.xlim([0.0, 1.0])
 plt.ylim([0.0, 1.05])
@@ -464,7 +510,7 @@ model_package = {
     'high_risk_interactions': high_risk_interactions,
     'model_name': best_name,
     'performance': {
-        'roc_auc': roc_auc_score(y_test, best_pred_proba),
+        'roc_auc': best_auc,
         'training_samples': len(X_train),
         'test_samples': len(X_test)
     }
@@ -481,7 +527,7 @@ print("=" * 60)
 print(f"✅ Dataset processed: {len(df_final):,} samples")
 print(f"✅ Features engineered: {len(feature_cols)}")
 print(f"✅ Best model: {best_name}")
-print(f"✅ ROC-AUC Score: {roc_auc_score(y_test, best_pred_proba):.3f}")
+print(f"✅ ROC-AUC Score: {best_auc:.3f}")
 print(f"✅ Model saved: drug_food_model.pkl")
 print(f"✅ Plots saved: confusion_matrix.png, roc_curve.png, feature_importance.png")
 print("\n🚀 Ready for API development in Hours 9-10!")

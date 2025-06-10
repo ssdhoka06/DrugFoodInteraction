@@ -1,3 +1,5 @@
+
+
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -33,7 +35,8 @@ def load_and_clean_foodrugs(filepath=None):
     print("Loading FooDrugs dataset...")
     
     if filepath is None:
-        filepath = '/Users/sachidhoka/Desktop/food-drug interactions.csv'
+        # filepath = '/Users/sachidhoka/Desktop/food-drug interactions.csv'
+        filepath ='/content/drive/MyDrive/ASEP_2/food-drug-interactions.csv'
     
     try:
         # Try different encodings with error handling

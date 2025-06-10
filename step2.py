@@ -8,6 +8,7 @@ from sklearn.metrics import (classification_report, confusion_matrix,
                            precision_recall_curve, roc_auc_score, 
                            f1_score, precision_score, recall_score)
 from sklearn.preprocessing import StandardScaler
+from sklearn.impute import SimpleImputer
 from sklearn.utils.class_weight import compute_class_weight
 from imblearn.over_sampling import SMOTE, ADASYN, BorderlineSMOTE
 from imblearn.under_sampling import EditedNearestNeighbours
@@ -33,12 +34,28 @@ class TwoStageRiskClassifier:
         self.stage1_model = None  # Risk vs No-Risk
         self.stage2_model = None  # Moderate vs High Risk
         self.scaler = StandardScaler()
+        self.imputer = SimpleImputer(strategy='median')  # Handle NaN values
         self.feature_selector = None
         
         # Training history
         self.stage1_history = {}
         self.stage2_history = {}
         self.validation_results = {}
+        
+    def preprocess_features(self, X, fit=False):
+        """
+        Preprocess features: handle NaNs, scale, etc.
+        """
+        if fit:
+            # Fit and transform
+            X_imputed = self.imputer.fit_transform(X)
+            X_scaled = self.scaler.fit_transform(X_imputed)
+        else:
+            # Transform only
+            X_imputed = self.imputer.transform(X)
+            X_scaled = self.scaler.transform(X_imputed)
+        
+        return X_scaled
         
     def analyze_class_distribution(self, y, stage_name=""):
         """Analyze and visualize class distribution"""
@@ -57,7 +74,9 @@ class TwoStageRiskClassifier:
             ratio = max(counts) / min(counts)
             print(f"Imbalance Ratio: {ratio:.1f}:1")
             
-            if ratio > 10:
+            if ratio > 100:
+                print("🚨 EXTREME IMBALANCE - Will use specialized handling")
+            elif ratio > 10:
                 print("⚠️  SEVERE IMBALANCE - Will use advanced resampling")
             elif ratio > 3:
                 print("⚠️  MODERATE IMBALANCE - Will use basic resampling")
@@ -129,14 +148,33 @@ class TwoStageRiskClassifier:
         print(f"Feature dimensionality: {X.shape[1]}")
         
         # Strategy selection based on characteristics
-        if minority_class < 50:
+        if minority_class < 10:
+            # Extremely small minority class - use SMOTE with very conservative settings
+            resampler = SMOTE(
+                random_state=self.random_state, 
+                k_neighbors=min(5, minority_class-1) if minority_class > 1 else 1,
+                sampling_strategy='auto'
+            )
+            strategy_name = f"SMOTE (k={min(5, minority_class-1)} neighbors)"
+            
+        elif minority_class < 50:
             # Very small minority class - use ADASYN or BorderlineSMOTE
             if X.shape[1] > 100:  # High dimensional
-                resampler = ADASYN(random_state=self.random_state, n_neighbors=3)
-                strategy_name = "ADASYN (adaptive, few neighbors)"
+                n_neighbors = min(5, minority_class-1) if minority_class > 1 else 1
+                resampler = ADASYN(
+                    random_state=self.random_state, 
+                    n_neighbors=n_neighbors,
+                    sampling_strategy='auto'
+                )
+                strategy_name = f"ADASYN (n_neighbors={n_neighbors})"
             else:
-                resampler = BorderlineSMOTE(random_state=self.random_state, k_neighbors=3)
-                strategy_name = "BorderlineSMOTE (focus on borderline cases)"
+                k_neighbors = min(5, minority_class-1) if minority_class > 1 else 1
+                resampler = BorderlineSMOTE(
+                    random_state=self.random_state, 
+                    k_neighbors=k_neighbors,
+                    sampling_strategy='auto'
+                )
+                strategy_name = f"BorderlineSMOTE (k_neighbors={k_neighbors})"
         
         elif imbalance_ratio > 20:
             # Severe imbalance - use combined approach
@@ -163,8 +201,20 @@ class TwoStageRiskClassifier:
         print("\n🎯 STAGE 1: Risk vs No-Risk Classification")
         print("=" * 50)
         
+        # Preprocess features
+        X_processed = self.preprocess_features(X, fit=True)
+        
+        # Check for remaining NaN values
+        if np.isnan(X_processed).any():
+            print("⚠️ Warning: NaN values still present after preprocessing")
+            # Additional cleaning
+            nan_mask = np.isnan(X_processed).any(axis=1)
+            X_processed = X_processed[~nan_mask]
+            y = y[~nan_mask]
+            print(f"Removed {np.sum(nan_mask)} samples with NaN values")
+        
         # Select resampler
-        resampler = self.select_optimal_resampler(X, y, "Stage 1")
+        resampler = self.select_optimal_resampler(X_processed, y, "Stage 1")
         
         # Define candidate models with class weights
         class_weights = compute_class_weight('balanced', classes=np.unique(y), y=y)
@@ -192,12 +242,6 @@ class TwoStageRiskClassifier:
                 random_state=self.random_state,
                 max_iter=1000,
                 solver='liblinear'
-            ),
-            'SVM': SVC(
-                class_weight=weight_dict,
-                random_state=self.random_state,
-                probability=True,
-                kernel='rbf'
             )
         }
         
@@ -210,47 +254,56 @@ class TwoStageRiskClassifier:
         for name, model in models.items():
             print(f"\nTesting {name}...")
             
-            # Create pipeline with resampling
-            if resampler is not None:
-                pipeline = ImbPipeline([
-                    ('resampler', resampler),
-                    ('classifier', model)
-                ])
-            else:
-                pipeline = model
-            
-            # Stratified K-Fold cross-validation
-            cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=self.random_state)
-            
-            # Multiple metrics
-            f1_scores = cross_val_score(pipeline, X, y, cv=cv, scoring='f1', n_jobs=-1)
-            precision_scores = cross_val_score(pipeline, X, y, cv=cv, scoring='precision', n_jobs=-1)
-            recall_scores = cross_val_score(pipeline, X, y, cv=cv, scoring='recall', n_jobs=-1)
-            
-            # Store results
-            results[name] = {
-                'f1_mean': f1_scores.mean(),
-                'f1_std': f1_scores.std(),
-                'precision_mean': precision_scores.mean(),
-                'recall_mean': recall_scores.mean(),
-                'pipeline': pipeline
-            }
-            
-            print(f"   F1: {f1_scores.mean():.4f} (±{f1_scores.std():.4f})")
-            print(f"   Precision: {precision_scores.mean():.4f}")
-            print(f"   Recall: {recall_scores.mean():.4f}")
-            
-            # Select best model (prioritize F1 for imbalanced data)
-            if f1_scores.mean() > best_score:
-                best_score = f1_scores.mean()
-                best_model = name
+            try:
+                # Create pipeline with resampling
+                if resampler is not None:
+                    pipeline = ImbPipeline([
+                        ('resampler', resampler),
+                        ('classifier', model)
+                    ])
+                else:
+                    pipeline = model
+                
+                # Stratified K-Fold cross-validation
+                cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=self.random_state)
+                
+                # Multiple metrics
+                f1_scores = cross_val_score(pipeline, X_processed, y, cv=cv, scoring='f1', n_jobs=-1)
+                precision_scores = cross_val_score(pipeline, X_processed, y, cv=cv, scoring='precision', n_jobs=-1)
+                recall_scores = cross_val_score(pipeline, X_processed, y, cv=cv, scoring='recall', n_jobs=-1)
+                
+                # Store results
+                results[name] = {
+                    'f1_mean': f1_scores.mean(),
+                    'f1_std': f1_scores.std(),
+                    'precision_mean': precision_scores.mean(),
+                    'recall_mean': recall_scores.mean(),
+                    'pipeline': pipeline
+                }
+                
+                print(f"   F1: {f1_scores.mean():.4f} (±{f1_scores.std():.4f})")
+                print(f"   Precision: {precision_scores.mean():.4f}")
+                print(f"   Recall: {recall_scores.mean():.4f}")
+                
+                # Select best model (prioritize F1 for imbalanced data)
+                if f1_scores.mean() > best_score:
+                    best_score = f1_scores.mean()
+                    best_model = name
+                    
+            except Exception as e:
+                print(f"   ❌ Failed: {str(e)}")
+                continue
         
-        print(f"\n✅ Best Stage 1 Model: {best_model} (F1: {best_score:.4f})")
-        
-        # Train final model on full dataset
-        self.stage1_model = results[best_model]['pipeline']
-        self.stage1_model.fit(X, y)
-        self.stage1_history = results
+        if best_model:
+            print(f"\n✅ Best Stage 1 Model: {best_model} (F1: {best_score:.4f})")
+            
+            # Train final model on full dataset
+            self.stage1_model = results[best_model]['pipeline']
+            self.stage1_model.fit(X_processed, y)
+            self.stage1_history = results
+        else:
+            print("\n❌ No viable Stage 1 model found")
+            raise ValueError("Stage 1 training failed")
         
         return self.stage1_model, results
     
@@ -265,8 +318,22 @@ class TwoStageRiskClassifier:
             print("⚠️ Insufficient data for Stage 2 training")
             return None, {}
         
+        # Preprocess features (transform only, already fitted in stage 1)
+        X_processed = self.preprocess_features(X, fit=False)
+        
+        # Check for NaN values
+        if np.isnan(X_processed).any():
+            nan_mask = np.isnan(X_processed).any(axis=1)
+            X_processed = X_processed[~nan_mask]
+            y = y[~nan_mask]
+            print(f"Removed {np.sum(nan_mask)} samples with NaN values from Stage 2")
+        
+        if len(X_processed) == 0 or len(np.unique(y)) < 2:
+            print("⚠️ Insufficient clean data for Stage 2 training")
+            return None, {}
+        
         # Select resampler
-        resampler = self.select_optimal_resampler(X, y, "Stage 2")
+        resampler = self.select_optimal_resampler(X_processed, y, "Stage 2")
         
         # Define models optimized for small datasets
         class_weights = compute_class_weight('balanced', classes=np.unique(y), y=y)
@@ -323,9 +390,9 @@ class TwoStageRiskClassifier:
                 cv = StratifiedKFold(n_splits=n_folds, shuffle=True, random_state=self.random_state)
                 
                 # Evaluate
-                f1_scores = cross_val_score(pipeline, X, y, cv=cv, scoring='f1', n_jobs=-1)
-                precision_scores = cross_val_score(pipeline, X, y, cv=cv, scoring='precision', n_jobs=-1)
-                recall_scores = cross_val_score(pipeline, X, y, cv=cv, scoring='recall', n_jobs=-1)
+                f1_scores = cross_val_score(pipeline, X_processed, y, cv=cv, scoring='f1', n_jobs=-1)
+                precision_scores = cross_val_score(pipeline, X_processed, y, cv=cv, scoring='precision', n_jobs=-1)
+                recall_scores = cross_val_score(pipeline, X_processed, y, cv=cv, scoring='recall', n_jobs=-1)
                 
                 results[name] = {
                     'f1_mean': f1_scores.mean(),
@@ -344,7 +411,7 @@ class TwoStageRiskClassifier:
                     best_model = name
                     
             except Exception as e:
-                print(f"   ❌ Failed: {e}")
+                print(f"   ❌ Failed: {str(e)}")
                 continue
         
         if best_model:
@@ -352,7 +419,7 @@ class TwoStageRiskClassifier:
             
             # Train final model
             self.stage2_model = results[best_model]['pipeline']
-            self.stage2_model.fit(X, y)
+            self.stage2_model.fit(X_processed, y)
             self.stage2_history = results
         else:
             print("\n⚠️ No viable Stage 2 model found")
@@ -366,13 +433,16 @@ class TwoStageRiskClassifier:
         if self.stage1_model is None:
             raise ValueError("Stage 1 model not trained")
         
+        # Preprocess features
+        X_processed = self.preprocess_features(X, fit=False)
+        
         # Stage 1: Risk vs No-Risk
-        stage1_pred = self.stage1_model.predict(X)
-        stage1_proba = self.stage1_model.predict_proba(X)[:, 1]  # Risk probability
+        stage1_pred = self.stage1_model.predict(X_processed)
+        stage1_proba = self.stage1_model.predict_proba(X_processed)[:, 1]  # Risk probability
         
         # Initialize final predictions
-        final_pred = np.zeros(len(X))  # 0 = Low risk
-        final_proba = np.zeros((len(X), 3))  # [Low, Moderate, High]
+        final_pred = np.zeros(len(X_processed))  # 0 = Low risk
+        final_proba = np.zeros((len(X_processed), 3))  # [Low, Moderate, High]
         
         # No-risk samples stay as low risk (0)
         no_risk_mask = stage1_pred == 0
@@ -383,7 +453,7 @@ class TwoStageRiskClassifier:
         risk_mask = stage1_pred == 1
         
         if np.sum(risk_mask) > 0 and self.stage2_model is not None:
-            X_risk = X[risk_mask]
+            X_risk = X_processed[risk_mask]
             stage2_pred = self.stage2_model.predict(X_risk)
             stage2_proba = self.stage2_model.predict_proba(X_risk)
             
@@ -411,14 +481,16 @@ class TwoStageRiskClassifier:
         
         # Make predictions
         if stage_name == "Stage 1":
-            y_pred = self.stage1_model.predict(X_test)
-            y_proba = self.stage1_model.predict_proba(X_test)[:, 1]
+            X_processed = self.preprocess_features(X_test, fit=False)
+            y_pred = self.stage1_model.predict(X_processed)
+            y_proba = self.stage1_model.predict_proba(X_processed)[:, 1]
         elif stage_name == "Stage 2":
             if self.stage2_model is None:
                 print("⚠️ Stage 2 model not available")
                 return {}
-            y_pred = self.stage2_model.predict(X_test)
-            y_proba = self.stage2_model.predict_proba(X_test)[:, 1]
+            X_processed = self.preprocess_features(X_test, fit=False)
+            y_pred = self.stage2_model.predict(X_processed)
+            y_proba = self.stage2_model.predict_proba(X_processed)[:, 1]
         else:
             # Two-stage evaluation
             y_pred, y_proba_full, _, _ = self.predict_two_stage(X_test)
@@ -430,9 +502,13 @@ class TwoStageRiskClassifier:
         recall = recall_score(y_test, y_pred, average='weighted')
         
         # AUC (for binary classification)
+        auc = None
         if len(np.unique(y_test)) == 2:
-            auc = roc_auc_score(y_test, y_proba)
-            print(f"AUC: {auc:.4f}")
+            try:
+                auc = roc_auc_score(y_test, y_proba)
+                print(f"AUC: {auc:.4f}")
+            except:
+                print("AUC: Could not compute")
         
         print(f"F1 Score: {f1:.4f}")
         print(f"Precision: {precision:.4f}")
@@ -451,52 +527,11 @@ class TwoStageRiskClassifier:
             'f1': f1,
             'precision': precision,
             'recall': recall,
-            'auc': auc if len(np.unique(y_test)) == 2 else None,
+            'auc': auc,
             'confusion_matrix': cm,
             'predictions': y_pred,
             'probabilities': y_proba
         }
-    
-    def create_critical_validation_set(self, df, n_high_risk=None):
-        """
-        Create a critical validation set focusing on high-risk interactions
-        """
-        print("\n🔍 Creating Critical Validation Set")
-        print("-" * 40)
-        
-        # Extract all high-risk interactions
-        high_risk_mask = df['severity_encoded'] == 2
-        high_risk_df = df[high_risk_mask].copy()
-        
-        print(f"Found {len(high_risk_df)} high-risk interactions")
-        
-        if len(high_risk_df) == 0:
-            print("⚠️ No high-risk interactions found")
-            return None, None
-        
-        # Add known dangerous pairs if possible
-        dangerous_pairs = [
-            ('warfarin', 'vitamin k'),
-            ('warfarin', 'green leafy vegetables'),
-            ('monoamine oxidase inhibitors', 'tyramine'),
-            ('digoxin', 'licorice'),
-            ('theophylline', 'caffeine')
-        ]
-        
-        print(f"\n🎯 Critical Validation Set Contents:")
-        print(f"High-risk interactions: {len(high_risk_df)}")
-        
-        # Sample for manual verification if too many
-        if n_high_risk and len(high_risk_df) > n_high_risk:
-            validation_df = high_risk_df.sample(n=n_high_risk, random_state=self.random_state)
-            print(f"Sampled to {n_high_risk} for manual verification")
-        else:
-            validation_df = high_risk_df
-        
-        # Create validation features
-        validation_indices = validation_df.index.tolist()
-        
-        return validation_df, validation_indices
     
     def fit(self, X, y, df=None):
         """
@@ -504,6 +539,10 @@ class TwoStageRiskClassifier:
         """
         print("\n🚀 TWO-STAGE RISK CLASSIFIER TRAINING")
         print("=" * 60)
+        
+        # Check for NaN values in input
+        if np.isnan(X).any():
+            print(f"⚠️ Found {np.sum(np.isnan(X))} NaN values in input features")
         
         # Prepare labels
         if df is not None:
@@ -519,16 +558,11 @@ class TwoStageRiskClassifier:
         
         # Train Stage 2 (only on risk samples)
         if len(stage2_labels) > 0:
-            X_stage2 = X[y > 0] if df is None else X[df['severity_encoded'] > 0]
+            if df is not None:
+                X_stage2 = X[df['severity_encoded'] > 0]
+            else:
+                X_stage2 = X[y > 0]
             self.train_stage2_models(X_stage2, stage2_labels)
-        
-        # Create critical validation set
-        if df is not None:
-            critical_df, critical_indices = self.create_critical_validation_set(df, n_high_risk=50)
-            self.validation_results['critical_validation'] = {
-                'indices': critical_indices,
-                'df': critical_df
-            }
         
         print("\n✅ Two-Stage Classifier Training Complete!")
         return self
@@ -539,6 +573,7 @@ class TwoStageRiskClassifier:
             'stage1_model': self.stage1_model,
             'stage2_model': self.stage2_model,
             'scaler': self.scaler,
+            'imputer': self.imputer,
             'stage1_history': self.stage1_history,
             'stage2_history': self.stage2_history,
             'validation_results': self.validation_results
@@ -562,36 +597,55 @@ def run_two_stage_classification():
     # Load your data (replace with actual file paths)
     print("📂 Loading data...")
     
-    # Load features from Step 1
-    final_features = np.load('final_features.npy')
-    merged_df = pd.read_csv('merged_drug_food_data.csv')
-    
-    print(f"✅ Data loaded: {final_features.shape[0]} samples, {final_features.shape[1]} features")
-    
-    # Initialize classifier
-    classifier = TwoStageRiskClassifier(random_state=42)
-    
-    # Split data
-    X_train, X_test, y_train, y_test = train_test_split(
-        final_features, 
-        merged_df['severity_encoded'],
-        test_size=0.2,
-        random_state=42,
-        stratify=merged_df['severity_encoded']
-    )
-    
-    # Fit the classifier
-    classifier.fit(X_train, y_train, merged_df.iloc[X_train.index] if hasattr(X_train, 'index') else None)
-    
-    # Evaluate
-    print("\n📊 Final Evaluation")
-    results = classifier.evaluate_model(X_test, y_test, "Two-Stage")
-    
-    # Save models
-    classifier.save_models("drug_food_classifier")
-    
-    print("\n🎉 Two-Stage Classification Complete!")
-    return classifier, results
+    try:
+        # Load features from Step 1
+        final_features = np.load('final_features.npy')
+        merged_df = pd.read_csv('merged_drug_food_data.csv')
+        
+        print(f"✅ Data loaded: {final_features.shape[0]} samples, {final_features.shape[1]} features")
+        
+        # Check for NaN values
+        nan_count = np.sum(np.isnan(final_features))
+        if nan_count > 0:
+            print(f"⚠️ Found {nan_count} NaN values in features - will be handled by imputation")
+        
+        # Initialize classifier
+        classifier = TwoStageRiskClassifier(random_state=42)
+        
+        # Split data with proper indexing
+        train_indices, test_indices = train_test_split(
+            range(len(final_features)), 
+            test_size=0.2,
+            random_state=42,
+            stratify=merged_df['severity_encoded']
+        )
+        
+        X_train = final_features[train_indices]
+        X_test = final_features[test_indices]
+        y_train = merged_df['severity_encoded'].iloc[train_indices].values
+        y_test = merged_df['severity_encoded'].iloc[test_indices].values
+        train_df = merged_df.iloc[train_indices]
+        
+        # Fit the classifier
+        classifier.fit(X_train, y_train, train_df)
+        
+        # Evaluate
+        print("\n📊 Final Evaluation")
+        results = classifier.evaluate_model(X_test, y_test, "Two-Stage")
+        
+        # Save models
+        classifier.save_models("drug_food_classifier")
+        
+        print("\n🎉 Two-Stage Classification Complete!")
+        return classifier, results
+        
+    except FileNotFoundError as e:
+        print(f"❌ File not found: {e}")
+        print("Please ensure 'final_features.npy' and 'merged_drug_food_data.csv' exist")
+        return None, None
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        return None, None
 
 if __name__ == "__main__":
     # Run the complete pipeline

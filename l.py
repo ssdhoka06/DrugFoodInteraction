@@ -1,3 +1,5 @@
+import json
+from datetime import datetime
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -263,223 +265,6 @@ print(f"Balance ratio: {len(df_negatives)/len(df_clean):.2f}")
 print("\n🧠 IMPLEMENTING SPECIALIZED MODELS")
 print("-" * 40)
 
-class EPGCNClassifier(BaseEstimator, ClassifierMixin):
-    """Enhanced Propagation Graph Convolutional Network - Drug Similarity (EPGCN-DS)"""
-    
-    def __init__(self, n_layers=3, hidden_dim=64, learning_rate=0.01, epochs=100):
-        self.n_layers = n_layers
-        self.hidden_dim = hidden_dim
-        self.learning_rate = learning_rate
-        self.epochs = epochs
-        self.classes_ = None
-        self.classifier = None
-    
-    
-        
-    def _build_similarity_graph(self, X, y):
-        """Build drug-food similarity graph"""
-        n_samples = X.shape[0]
-        if n_samples > 5000:
-            # Sample a subset to avoid memory issues
-            indices = np.random.choice(n_samples, 5000, replace=False)
-            X = X[indices]
-            n_samples = 5000
-        
-        # Create adjacency matrix based on feature similarity
-        sim_matrix = cosine_similarity(X)
-        
-        # Keep only top-k similarities
-        k = min(10, n_samples // 10)
-        for i in range(n_samples):
-            top_k_indices = np.argsort(sim_matrix[i])[-k-1:-1]  # Exclude self
-            mask = np.zeros(n_samples, dtype=bool)
-            mask[top_k_indices] = True
-            sim_matrix[i, ~mask] = 0
-        
-        return csr_matrix(sim_matrix)
-    
-    def _propagate_features(self, X, adj_matrix, h_prev):
-        """Feature propagation step"""
-        # Simplified GCN propagation: H = AXW
-        normalized_adj = adj_matrix + np.eye(adj_matrix.shape[0])
-        degree = np.array(normalized_adj.sum(axis=1)).flatten()
-        degree_inv_sqrt = np.power(degree + 1e-10, -0.5)  # Add small epsilon
-        degree_inv_sqrt[np.isinf(degree_inv_sqrt)] = 0
-        
-        # D^(-1/2) * A * D^(-1/2)
-        normalized_adj = normalized_adj.multiply(degree_inv_sqrt).T.multiply(degree_inv_sqrt).T
-        
-        # Simple linear transformation (simplified for demonstration)
-        h_new = normalized_adj @ h_prev
-        return h_new
-    
-    def fit(self, X, y):
-        """Train EPGCN model"""
-        self.classes_ = np.unique(y)
-        
-        # Build similarity graph
-        adj_matrix = self._build_similarity_graph(X, y)
-        
-        # Initialize features
-        h = X.copy()
-        
-        # Propagation layers (simplified)
-        for layer in range(self.n_layers):
-            h = self._propagate_features(X, adj_matrix, h)
-            # Add non-linearity
-            h = np.tanh(h)
-        
-        # Final classification layer (using logistic regression)
-        self.classifier = LogisticRegression(random_state=42)
-        self.classifier.fit(h, y)
-        
-        return self
-    
-    def predict(self, X):
-        """Predict using EPGCN"""
-        return self.classifier.predict(X)
-    
-    def predict_proba(self, X):
-        """Predict probabilities using EPGCN"""
-        return self.classifier.predict_proba(X)
-
-class MRGNNClassifier(BaseEstimator, ClassifierMixin):
-    """Multi-Relational Graph Neural Network (MR-GNN)"""
-    
-    def __init__(self, n_relations=3, hidden_dim=64, epochs=100):
-        self.n_relations = n_relations
-        self.hidden_dim = hidden_dim
-        self.epochs = epochs
-        self.classes_ = None
-        
-    def _create_multi_relational_graph(self, X, y):
-        """Create multiple relation graphs"""
-        n_samples = X.shape[0]
-        
-        # Relation 1: Drug similarity
-        drug_features = X[:, :X.shape[1]//2]  # First half for drugs
-        drug_sim = cosine_similarity(drug_features)
-        
-        # Relation 2: Food similarity  
-        food_features = X[:, X.shape[1]//2:]  # Second half for foods
-        food_sim = cosine_similarity(food_features)
-        
-        # Relation 3: Interaction similarity
-        interaction_sim = cosine_similarity(X)
-        
-        return [csr_matrix(drug_sim), csr_matrix(food_sim), csr_matrix(interaction_sim)]
-    
-    def fit(self, X, y):
-        """Train MR-GNN model"""
-        self.classes_ = np.unique(y)
-        
-        # Create multi-relational graphs
-        relation_graphs = self._create_multi_relational_graph(X, y)
-        
-        # Aggregate information from all relations
-        aggregated_features = X.copy()
-        for graph in relation_graphs:
-            # Simple aggregation (mean of neighbor features)
-            neighbor_features = graph @ X
-            aggregated_features += neighbor_features
-        
-        aggregated_features /= (len(relation_graphs) + 1)
-        
-        # Train classifier on aggregated features
-        self.classifier = RandomForestClassifier(n_estimators=100, random_state=42)
-        self.classifier.fit(aggregated_features, y)
-        
-        return self
-    
-    def predict(self, X):
-        """Predict using MR-GNN"""
-        return self.classifier.predict(X)
-    
-    def predict_proba(self, X):
-        """Predict probabilities using MR-GNN"""
-        return self.classifier.predict_proba(X)
-
-class DFIMSClassifier(BaseEstimator, ClassifierMixin):
-    """Drug-Food Interaction Multi-Scale classifier (DFI-MS)"""
-    
-    def __init__(self, scales=[1, 2, 4], base_estimator=None):
-        self.scales = scales
-        self.base_estimator = base_estimator or RandomForestClassifier(n_estimators=100, random_state=42)
-        self.scale_classifiers = {}
-        self.classes_ = None
-        
-    def _create_multi_scale_features(self, X, scale):
-        """Create features at different scales"""
-        if scale == 1:
-            return X
-        
-        # For scale > 1, create pooled features
-        n_features = X.shape[1]
-        pool_size = min(scale, n_features)
-        
-        if pool_size >= n_features:
-            return X
-        
-        # Average pooling
-        pooled_features = []
-        for i in range(0, n_features, pool_size):
-            end_idx = min(i + pool_size, n_features)
-            pooled = np.mean(X[:, i:end_idx], axis=1, keepdims=True)
-            pooled_features.append(pooled)
-        
-        return np.hstack(pooled_features)
-    
-    def fit(self, X, y):
-        """Train DFI-MS model"""
-        self.classes_ = np.unique(y)
-        
-        # Train classifiers at different scales
-        for scale in self.scales:
-            X_scale = self._create_multi_scale_features(X, scale)
-            
-            # Create new instance instead of cloning
-            if hasattr(self.base_estimator, 'get_params'):
-                classifier = self.base_estimator.__class__(**self.base_estimator.get_params())
-            else:
-                classifier = RandomForestClassifier(n_estimators=100, random_state=42)
-            classifier.fit(X_scale, y)
-            
-            self.scale_classifiers[scale] = classifier
-        
-        return self
-    
-    def predict(self, X):
-        """Predict using ensemble of multi-scale classifiers"""
-        predictions = []
-        
-        for scale in self.scales:
-            X_scale = self._create_multi_scale_features(X, scale)
-            pred = self.scale_classifiers[scale].predict(X_scale)
-            predictions.append(pred)
-        
-        # Majority voting
-        predictions = np.array(predictions).T
-        final_predictions = []
-        
-        for pred_row in predictions:
-            unique, counts = np.unique(pred_row, return_counts=True)
-            final_predictions.append(unique[np.argmax(counts)])
-        
-        return np.array(final_predictions)
-    
-    def predict_proba(self, X):
-        """Predict probabilities using ensemble averaging"""
-        probabilities = []
-        
-        for scale in self.scales:
-            X_scale = self._create_multi_scale_features(X, scale)
-            proba = self.scale_classifiers[scale].predict_proba(X_scale)
-            probabilities.append(proba)
-        
-        # Average probabilities
-        avg_proba = np.mean(probabilities, axis=0)
-        return avg_proba
-
 # ENHANCED FEATURE ENGINEERING
 print("\n🔧 PHASE 2: ENHANCED FEATURE ENGINEERING")
 print("-" * 40)
@@ -498,17 +283,23 @@ def create_enhanced_features(df):
     risk_dummies = pd.get_dummies(df['risk_level'], prefix='risk').astype(int)
     
     # 2. Risk scoring features
-    def create_risk_score(risk_level, mechanism):
-        risk_scores = {'HIGH': 3, 'MODERATE': 2, 'LOW': 1}
-        base_score = risk_scores.get(risk_level, 1)
+    def create_detailed_risk_score(risk_level, mechanism, drug_category, food_category):
+        """Enhanced risk scoring with more granular categories"""
+        base_scores = {'HIGH': 4, 'MODERATE': 2, 'LOW': 1}
+        base_score = base_scores.get(risk_level, 1)
         
-        if mechanism != 'unknown':
+        # Add mechanism-specific adjustments
+        if mechanism in ['cyp3a4_inhibition', 'vitamin_k_competition']:
             base_score += 1
         
-        return base_score
+        # Add category-specific adjustments
+        if drug_category == 'anticoagulant' and food_category == 'leafy_greens':
+            base_score += 2
+        
+        return min(base_score, 5)  # Cap at 5
     
     df['risk_score'] = df.apply(
-        lambda x: create_risk_score(x['risk_level'], x['mechanism']), 
+        lambda x: create_detailed_risk_score(x['risk_level'], x['mechanism'], x['drug_category'], x['food_category']), 
         axis=1
     )
     
@@ -769,30 +560,6 @@ models['Gradient Boosting'] = gb_model
 print("🧠 Training Specialized Models...")
 print("-" * 30)
 
-# 8. EPGCN-DS (Enhanced Propagation Graph Convolutional Network - Drug Similarity)
-epgcn_model = EPGCNClassifier(
-    n_layers=3,
-    hidden_dim=64,
-    learning_rate=0.01,
-    epochs=100
-)
-models['EPGCN-DS'] = epgcn_model
-
-# 9. MR-GNN (Multi-Relational Graph Neural Network)
-mrgnn_model = MRGNNClassifier(
-    n_relations=3,
-    hidden_dim=64,
-    epochs=100
-)
-models['MR-GNN'] = mrgnn_model
-
-# 10. DFI-MS (Drug-Food Interaction Multi-Scale)
-dfims_model = DFIMSClassifier(
-    scales=[1, 2, 4],
-    base_estimator=RandomForestClassifier(n_estimators=100, random_state=42)
-)
-models['DFI-MS'] = dfims_model
-
 # Train and evaluate all models
 print("\n🚀 TRAINING AND EVALUATION")
 print("=" * 50)
@@ -912,7 +679,7 @@ print("=" * 80)
 print("Final Results for Selected Models:")
 print("-" * 40)
 print("Models included: LightGBM, MLP, Voting Classifier, Extra Trees, CatBoost,")
-print("                EPGCN-DS, MR-GNN, DFI-MS, Random Forest, XGBoost, Gradient Boosting")
+print("                Random Forest, XGBoost, Gradient Boosting")
 print("-" * 40)
 print(results_df.round(4))
 
@@ -1157,6 +924,62 @@ def predict_new_interaction(drug_name, food_name, model=None, return_risk=True):
             'probability': None
         }
 
+def get_personalized_warning(drug_name, food_name, age=None, gender=None, conditions=None):
+    """Generate personalized warnings based on patient factors"""
+    base_result = predict_new_interaction(drug_name, food_name)
+    
+    # Adjust risk based on patient factors
+    risk_multiplier = 1.0
+    if age and age > 65:
+        risk_multiplier += 0.2  # Higher risk for elderly
+    if conditions and 'liver_disease' in conditions:
+        risk_multiplier += 0.3
+    if conditions and 'kidney_disease' in conditions:
+        risk_multiplier += 0.2
+    
+    adjusted_probability = min(base_result['probability'] * risk_multiplier, 1.0)
+    
+    return {
+        **base_result,
+        'adjusted_probability': adjusted_probability,
+        'personalized_warning': f"Risk adjusted for age: {age}, conditions: {conditions}"
+    }
+
+def check_meal_plan_compatibility(medications, meal_plan):
+    """Check if meal plan is compatible with medications"""
+    interactions_found = []
+    
+    for drug in medications:
+        for food in meal_plan:
+            result = predict_new_interaction(drug, food)
+            if result['interaction_predicted'] and result['probability'] > 0.5:
+                interactions_found.append(result)
+    
+    return {
+        'safe': len(interactions_found) == 0,
+        'interactions': interactions_found,
+        'recommendations': f"Found {len(interactions_found)} potential interactions"
+    }
+
+def get_educational_insights(drug_name, food_name):
+    """Provide educational explanations"""
+    result = predict_new_interaction(drug_name, food_name)
+    
+    mechanism_explanations = {
+        'cyp3a4_inhibition': "This food blocks liver enzymes that break down the medication, potentially causing dangerous buildup.",
+        'calcium_chelation': "Calcium in this food binds to the medication, reducing absorption.",
+        'vitamin_k_competition': "This food contains vitamin K which can interfere with blood-thinning effects.",
+        'absorption_interference': "This food can slow down or reduce medication absorption in the stomach."
+    }
+    
+    explanation = mechanism_explanations.get(result['mechanism'], "The interaction mechanism is not well understood.")
+    
+    return {
+        **result,
+        'patient_explanation': explanation,
+        'professional_details': f"Mechanism: {result['mechanism']}, Category interaction: {result['drug_category']} + {result['food_category']}"
+    }
+
 # Example predictions
 print("\n🔮 EXAMPLE PREDICTIONS")
 print("=" * 40)
@@ -1193,21 +1016,25 @@ print(f"   • Total drug-food pairs analyzed: {len(df_final):,}")
 print(f"   • High-risk interactions identified: {len(df_final[df_final['risk_level'] == 'HIGH']):,}")
 print(f"   • Feature engineering created {X.shape[1]} features")
 print("   • Models used: LightGBM, MLP, Voting, Extra Trees, CatBoost,")
-print("                  EPGCN-DS, MR-GNN, DFI-MS, Random Forest, XGBoost, Gradient Boosting")
+print("                  Random Forest, XGBoost, Gradient Boosting")
 print("   • Risk categorization system operational (HIGH/MODERATE/LOW)")
 
-# Save the best model
-best_model = models[results_df.iloc[0]['model']]
+# Enhanced model saving with metadata
+model_package = {
+    'model': best_model,
+    'feature_info': feature_info,
+    'scaler': scaler,
+    'drug_categories': drug_categories,
+    'food_categories': food_categories,
+    'high_risk_interactions': high_risk_interactions,
+    'model_performance': results_df.iloc[0].to_dict(),
+    'training_date': datetime.now().isoformat(),
+    'model_version': '2.0'
+}
+
 try:
     with open('best_drug_food_interaction_model.pkl', 'wb') as f:
-        pickle.dump({
-            'model': best_model,
-            'feature_info': feature_info,
-            'scaler': scaler,
-            'drug_categories': drug_categories,
-            'food_categories': food_categories,
-            'high_risk_interactions': high_risk_interactions
-        }, f)
+        pickle.dump(model_package, f)
     print("✅ Best model saved as 'best_drug_food_interaction_model.pkl'")
 except Exception as e:
     print(f"⚠️ Could not save model: {str(e)}")

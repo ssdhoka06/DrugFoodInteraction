@@ -1,12 +1,11 @@
-
-
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.model_selection import train_test_split, cross_val_score, StratifiedKFold
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
-from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score, roc_curve
+from sklearn.metrics import (classification_report, confusion_matrix, roc_auc_score, 
+                           roc_curve, accuracy_score, precision_score, recall_score, f1_score)
 from sklearn.preprocessing import LabelEncoder
 from sklearn.svm import SVC
 import xgboost as xgb
@@ -298,13 +297,43 @@ X_test = X_test.astype(float)
 train_counts = Counter(y_train)
 weight_ratio = train_counts[0] / train_counts[1] if train_counts[1] > 0 else 1
 
-# XGBoost Model (Primary) - Fixed version
+# Function to calculate all metrics for a model
+def calculate_metrics(y_true, y_pred, y_pred_proba, model_name):
+    """Calculate comprehensive metrics for a model"""
+    metrics = {
+        'model_name': model_name,
+        'accuracy': accuracy_score(y_true, y_pred),
+        'precision': precision_score(y_true, y_pred),
+        'recall': recall_score(y_true, y_pred),
+        'f1_score': f1_score(y_true, y_pred),
+        'roc_auc': roc_auc_score(y_true, y_pred_proba)
+    }
+    return metrics
+
+# Function to plot confusion matrix
+def plot_confusion_matrix(y_true, y_pred, model_name):
+    """Plot confusion matrix for a model"""
+    cm = confusion_matrix(y_true, y_pred)
+    plt.figure(figsize=(6, 5))
+    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', 
+                xticklabels=['No Interaction', 'Interaction'],
+                yticklabels=['No Interaction', 'Interaction'])
+    plt.title(f'{model_name} Confusion Matrix')
+    plt.ylabel('True Label')
+    plt.xlabel('Predicted Label')
+    plt.tight_layout()
+    plt.savefig(f'{model_name.lower().replace(" ", "_")}_confusion_matrix.png', 
+                dpi=300, bbox_inches='tight')
+    plt.show()
+    return cm
+
+# XGBoost Model (Primary)
 print("\n🚀 Training XGBoost model...")
 xgb_model = xgb.XGBClassifier(
     n_estimators=200,
     max_depth=8,
     learning_rate=0.05,
-    scale_pos_weight=weight_ratio,  # Use calculated weight ratio
+    scale_pos_weight=weight_ratio,
     subsample=0.8,
     colsample_bytree=0.8,
     random_state=42,
@@ -314,13 +343,11 @@ xgb_model = xgb.XGBClassifier(
 )
 
 xgb_model.fit(X_train, y_train)
-
-# Predictions
 xgb_pred = xgb_model.predict(X_test)
 xgb_pred_proba = xgb_model.predict_proba(X_test)[:, 1]
 
-# Random Forest Model (Backup)
-print("🌲 Training Random Forest backup...")
+# Random Forest Model
+print("🌲 Training Random Forest model...")
 rf_model = RandomForestClassifier(
     n_estimators=100,
     max_depth=10,
@@ -333,7 +360,7 @@ rf_model.fit(X_train, y_train)
 rf_pred = rf_model.predict(X_test)
 rf_pred_proba = rf_model.predict_proba(X_test)[:, 1]
 
-# Gradient Boosting (often better than XGBoost for imbalanced data)
+# Gradient Boosting Model
 print("🚀 Training Gradient Boosting model...")
 gb_model = GradientBoostingClassifier(
     n_estimators=100,
@@ -345,98 +372,146 @@ gb_model.fit(X_train, y_train)
 gb_pred = gb_model.predict(X_test)
 gb_pred_proba = gb_model.predict_proba(X_test)[:, 1]
 
+# Calculate metrics for all models
+xgb_metrics = calculate_metrics(y_test, xgb_pred, xgb_pred_proba, "XGBoost")
+rf_metrics = calculate_metrics(y_test, rf_pred, rf_pred_proba, "Random Forest")
+gb_metrics = calculate_metrics(y_test, gb_pred, gb_pred_proba, "Gradient Boosting")
 
-# Calculate AUC scores for all models
-xgb_auc = roc_auc_score(y_test, xgb_pred_proba)
-rf_auc = roc_auc_score(y_test, rf_pred_proba)
-gb_auc = roc_auc_score(y_test, gb_pred_proba)
+# Create comprehensive comparison table
+all_metrics = [xgb_metrics, rf_metrics, gb_metrics]
+metrics_df = pd.DataFrame(all_metrics)
 
+print("\n📊 COMPREHENSIVE MODEL COMPARISON")
+print("=" * 70)
+print(metrics_df.round(4).to_string(index=False))
 
-print(f"XGBoost ROC-AUC: {xgb_auc:.3f}")
-print(f"Random Forest ROC-AUC: {rf_auc:.3f}")
-print(f"Gradient Boosting ROC-AUC: {gb_auc:.3f}")
+# Plot confusion matrices for all models
+print("\n📈 CONFUSION MATRICES")
+print("-" * 40)
 
+# XGBoost Confusion Matrix
+xgb_cm = plot_confusion_matrix(y_test, xgb_pred, "XGBoost")
 
-# Compare all models
-all_models = [
-    (xgb_model, xgb_pred, xgb_pred_proba, xgb_auc, "XGBoost"),
-    (rf_model, rf_pred, rf_pred_proba, rf_auc, "Random Forest"),
-    (gb_model, gb_pred, gb_pred_proba, gb_auc, "Gradient Boosting"),
+# Random Forest Confusion Matrix
+rf_cm = plot_confusion_matrix(y_test, rf_pred, "Random Forest")
 
-]
+# Gradient Boosting Confusion Matrix
+gb_cm = plot_confusion_matrix(y_test, gb_pred, "Gradient Boosting")
 
-# Choose best model
-best_model, best_pred, best_pred_proba, best_auc, best_name = max(all_models, key=lambda x: x[3])
+# Detailed classification reports
+print("\n📋 DETAILED CLASSIFICATION REPORTS")
+print("=" * 60)
 
-print(f"\nBest model: {best_name} (AUC: {best_auc:.3f})")
+print("\n🚀 XGBoost Classification Report:")
+print(classification_report(y_test, xgb_pred))
 
-# Cross-validation for better model assessment
-print("\n🔄 Cross-validation scores:")
+print("\n🌲 Random Forest Classification Report:")
+print(classification_report(y_test, rf_pred))
+
+print("\n⚡ Gradient Boosting Classification Report:")
+print(classification_report(y_test, gb_pred))
+
+# Choose best model based on F1-score (good for imbalanced data)
+best_model_idx = metrics_df['f1_score'].idxmax()
+best_model_name = metrics_df.loc[best_model_idx, 'model_name']
+best_f1_score = metrics_df.loc[best_model_idx, 'f1_score']
+
+if best_model_name == "XGBoost":
+    best_model, best_pred, best_pred_proba = xgb_model, xgb_pred, xgb_pred_proba
+elif best_model_name == "Random Forest":
+    best_model, best_pred, best_pred_proba = rf_model, rf_pred, rf_pred_proba
+else:
+    best_model, best_pred, best_pred_proba = gb_model, gb_pred, gb_pred_proba
+
+print(f"\n🏆 BEST MODEL: {best_model_name} (F1-Score: {best_f1_score:.4f})")
+
+# Cross-validation for best model
+print(f"\n🔄 Cross-validation for {best_model_name}:")
 cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
 
-cv_scores = cross_val_score(best_model, X_train, y_train, cv=cv, scoring='roc_auc')
-print(f"{best_name}: {cv_scores.mean():.3f} (+/- {cv_scores.std() * 2:.3f})")
+cv_scores_accuracy = cross_val_score(best_model, X_train, y_train, cv=cv, scoring='accuracy')
+cv_scores_f1 = cross_val_score(best_model, X_train, y_train, cv=cv, scoring='f1')
+cv_scores_roc_auc = cross_val_score(best_model, X_train, y_train, cv=cv, scoring='roc_auc')
+
+print(f"Accuracy: {cv_scores_accuracy.mean():.3f} (+/- {cv_scores_accuracy.std() * 2:.3f})")
+print(f"F1-Score: {cv_scores_f1.mean():.3f} (+/- {cv_scores_f1.std() * 2:.3f})")
+print(f"ROC-AUC: {cv_scores_roc_auc.mean():.3f} (+/- {cv_scores_roc_auc.std() * 2:.3f})")
 
 # HOUR 7-8: VALIDATION AND TESTING
 print("\n📊 PHASE 4: VALIDATION (Hours 7-8)")
 print("-" * 40)
 
-# Detailed evaluation
-print(f"\n{best_name} Performance Report:")
-print(f"ROC-AUC Score: {best_auc:.3f}")
-print("\nClassification Report:")
-print(classification_report(y_test, best_pred))
+# Create comparison visualization
+fig, axes = plt.subplots(2, 2, figsize=(15, 12))
 
-# Confusion Matrix
-cm = confusion_matrix(y_test, best_pred)
-plt.figure(figsize=(8, 6))
-sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', 
-            xticklabels=['No Interaction', 'Interaction'],
-            yticklabels=['No Interaction', 'Interaction'])
-plt.title(f'{best_name} Confusion Matrix')
-plt.ylabel('True Label')
-plt.xlabel('Predicted Label')
-plt.tight_layout()
-plt.savefig('confusion_matrix.png', dpi=300, bbox_inches='tight')
-plt.show()
+# 1. Metrics Comparison Bar Plot
+metrics_to_plot = ['accuracy', 'precision', 'recall', 'f1_score', 'roc_auc']
+metrics_comparison = metrics_df[['model_name'] + metrics_to_plot].set_index('model_name')
 
-# ROC Curve
-plt.figure(figsize=(8, 6))
-fpr, tpr, _ = roc_curve(y_test, best_pred_proba)
-plt.plot(fpr, tpr, linewidth=2, label=f'{best_name} (AUC = {best_auc:.3f})')
-plt.plot([0, 1], [0, 1], 'k--', linewidth=1)
-plt.xlim([0.0, 1.0])
-plt.ylim([0.0, 1.05])
-plt.xlabel('False Positive Rate')
-plt.ylabel('True Positive Rate')
-plt.title('ROC Curve')
-plt.legend(loc="lower right")
-plt.grid(True)
-plt.tight_layout()
-plt.savefig('roc_curve.png', dpi=300, bbox_inches='tight')
-plt.show()
+axes[0, 0].bar(range(len(metrics_comparison.columns)), metrics_comparison.iloc[0], 
+               alpha=0.7, label='XGBoost', color='blue')
+axes[0, 0].bar(range(len(metrics_comparison.columns)), metrics_comparison.iloc[1], 
+               alpha=0.7, label='Random Forest', color='green')
+axes[0, 0].bar(range(len(metrics_comparison.columns)), metrics_comparison.iloc[2], 
+               alpha=0.7, label='Gradient Boosting', color='orange')
+axes[0, 0].set_xticks(range(len(metrics_comparison.columns)))
+axes[0, 0].set_xticklabels(metrics_comparison.columns, rotation=45)
+axes[0, 0].set_ylabel('Score')
+axes[0, 0].set_title('Model Performance Comparison')
+axes[0, 0].legend()
+axes[0, 0].grid(True, alpha=0.3)
 
-# Feature Importance
+# 2. ROC Curves for all models
+fpr_xgb, tpr_xgb, _ = roc_curve(y_test, xgb_pred_proba)
+fpr_rf, tpr_rf, _ = roc_curve(y_test, rf_pred_proba)
+fpr_gb, tpr_gb, _ = roc_curve(y_test, gb_pred_proba)
+
+axes[0, 1].plot(fpr_xgb, tpr_xgb, linewidth=2, label=f'XGBoost (AUC = {xgb_metrics["roc_auc"]:.3f})')
+axes[0, 1].plot(fpr_rf, tpr_rf, linewidth=2, label=f'Random Forest (AUC = {rf_metrics["roc_auc"]:.3f})')
+axes[0, 1].plot(fpr_gb, tpr_gb, linewidth=2, label=f'Gradient Boosting (AUC = {gb_metrics["roc_auc"]:.3f})')
+axes[0, 1].plot([0, 1], [0, 1], 'k--', linewidth=1)
+axes[0, 1].set_xlim([0.0, 1.0])
+axes[0, 1].set_ylim([0.0, 1.05])
+axes[0, 1].set_xlabel('False Positive Rate')
+axes[0, 1].set_ylabel('True Positive Rate')
+axes[0, 1].set_title('ROC Curves Comparison')
+axes[0, 1].legend(loc="lower right")
+axes[0, 1].grid(True, alpha=0.3)
+
+# 3. Feature Importance for best model
 importance = best_model.feature_importances_
-
 feature_importance = pd.DataFrame({
     'feature': feature_cols,
     'importance': importance
 }).sort_values('importance', ascending=False)
 
-print("\nTop 15 Most Important Features:")
-print(feature_importance.head(15))
+top_features = feature_importance.head(10)
+axes[1, 0].barh(range(len(top_features)), top_features['importance'])
+axes[1, 0].set_yticks(range(len(top_features)))
+axes[1, 0].set_yticklabels(top_features['feature'])
+axes[1, 0].set_xlabel('Feature Importance')
+axes[1, 0].set_title(f'Top 10 Feature Importance - {best_model_name}')
+axes[1, 0].invert_yaxis()
+axes[1, 0].grid(True, alpha=0.3)
 
-# Plot feature importance
-plt.figure(figsize=(10, 8))
-top_features = feature_importance.head(15)
-plt.barh(range(len(top_features)), top_features['importance'])
-plt.yticks(range(len(top_features)), top_features['feature'])
-plt.xlabel('Feature Importance')
-plt.title(f'Top 15 Feature Importance - {best_name}')
-plt.gca().invert_yaxis()
+# 4. Model Performance Heatmap
+performance_matrix = metrics_df.set_index('model_name')[metrics_to_plot].T
+im = axes[1, 1].imshow(performance_matrix.values, cmap='YlOrRd', aspect='auto')
+axes[1, 1].set_xticks(range(len(performance_matrix.columns)))
+axes[1, 1].set_yticks(range(len(performance_matrix.index)))
+axes[1, 1].set_xticklabels(performance_matrix.columns)
+axes[1, 1].set_yticklabels(performance_matrix.index)
+axes[1, 1].set_title('Performance Metrics Heatmap')
+
+# Add text annotations
+for i in range(len(performance_matrix.index)):
+    for j in range(len(performance_matrix.columns)):
+        text = axes[1, 1].text(j, i, f'{performance_matrix.iloc[i, j]:.3f}',
+                              ha="center", va="center", color="black", fontsize=8)
+
+plt.colorbar(im, ax=axes[1, 1])
 plt.tight_layout()
-plt.savefig('feature_importance.png', dpi=300, bbox_inches='tight')
+plt.savefig('comprehensive_model_analysis.png', dpi=300, bbox_inches='tight')
 plt.show()
 
 # PREDICTION FUNCTION
@@ -500,12 +575,17 @@ model_package = {
     'drug_categories': drug_categories,
     'food_categories': food_categories,
     'high_risk_interactions': high_risk_interactions,
-    'model_name': best_name,
+    'model_name': best_model_name,
     'performance': {
-        'roc_auc': best_auc,
+        'accuracy': metrics_df.loc[best_model_idx, 'accuracy'],
+        'precision': metrics_df.loc[best_model_idx, 'precision'],
+        'recall': metrics_df.loc[best_model_idx, 'recall'],
+        'f1_score': metrics_df.loc[best_model_idx, 'f1_score'],
+        'roc_auc': metrics_df.loc[best_model_idx, 'roc_auc'],
         'training_samples': len(X_train),
         'test_samples': len(X_test)
-    }
+    },
+    'all_model_metrics': metrics_df.to_dict('records')
 }
 
 with open('drug_food_model.pkl', 'wb') as f:
@@ -518,8 +598,8 @@ print("\n🎉 12-HOUR SPRINT SUMMARY")
 print("=" * 60)
 print(f"✅ Dataset processed: {len(df_final):,} samples")
 print(f"✅ Features engineered: {len(feature_cols)}")
-print(f"✅ Best model: {best_name}")
-print(f"✅ ROC-AUC Score: {best_auc:.3f}")
+print(f"✅ Best model: {best_model_name}")  # Changed from best_name to best_model_name
+print(f"✅ ROC-AUC Score: {metrics_df.loc[best_model_idx, 'roc_auc']:.3f}")  # Changed from best_auc
 print(f"✅ Model saved: drug_food_model.pkl")
 print(f"✅ Plots saved: confusion_matrix.png, roc_curve.png, feature_importance.png")
 print("\n🚀 Ready for API development in Hours 9-10!")

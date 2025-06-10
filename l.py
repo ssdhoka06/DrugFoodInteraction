@@ -267,11 +267,15 @@ print("-" * 40)
 class EPGCNClassifier(BaseEstimator, ClassifierMixin):
     """Enhanced Propagation Graph Convolutional Network - Drug Similarity (EPGCN-DS)"""
     
-    def __init__(self, scales=[1, 2, 4], base_estimator=None):
+    def __init__(self, scales=[1, 2, 4], base_estimator=None, n_layers=2, hidden_dim=64, learning_rate=0.01, epochs=100):
         self.scales = scales
         self.base_estimator = base_estimator or RandomForestClassifier(n_estimators=100, random_state=42)
         self.scale_classifiers = {}
         self.classes_ = None
+        self.n_layers = n_layers
+        self.hidden_dim = hidden_dim
+        self.learning_rate = learning_rate
+        self.epochs = epochs
         
     def _build_similarity_graph(self, X, y):
         """Build drug-food similarity graph"""

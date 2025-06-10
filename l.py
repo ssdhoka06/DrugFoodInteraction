@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-from sklearn.base import BaseEstimator, ClassifierMixin, clone
+from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.model_selection import train_test_split, cross_val_score, StratifiedKFold
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.ensemble import ExtraTreesClassifier, VotingClassifier, RandomForestClassifier
@@ -253,7 +253,6 @@ def generate_balanced_negatives(df_positive, target_ratio=0.8):
 # Generate balanced negatives
 df_negatives = generate_balanced_negatives(df_clean, target_ratio=0.8)
 df_final = pd.concat([df_clean, df_negatives], ignore_index=True)
-df_final = df_final.reset_index(drop=True)  # Reset index after concatenation
 
 print(f"Final dataset: {len(df_final)} samples")
 print(f"Positive interactions: {len(df_clean)}")
@@ -266,6 +265,14 @@ print("-" * 40)
 
 class EPGCNClassifier(BaseEstimator, ClassifierMixin):
     """Enhanced Propagation Graph Convolutional Network - Drug Similarity (EPGCN-DS)"""
+    
+    def __init__(self, n_layers=3, hidden_dim=64, learning_rate=0.01, epochs=100):
+        self.n_layers = n_layers
+        self.hidden_dim = hidden_dim
+        self.learning_rate = learning_rate
+        self.epochs = epochs
+        self.classes_ = None
+        self.classifier = None
     
     
         
@@ -430,8 +437,11 @@ class DFIMSClassifier(BaseEstimator, ClassifierMixin):
         for scale in self.scales:
             X_scale = self._create_multi_scale_features(X, scale)
             
-            # Clone base estimator
-            classifier = clone(self.base_estimator)
+            # Create new instance instead of cloning
+            if hasattr(self.base_estimator, 'get_params'):
+                classifier = self.base_estimator.__class__(**self.base_estimator.get_params())
+            else:
+                classifier = RandomForestClassifier(n_estimators=100, random_state=42)
             classifier.fit(X_scale, y)
             
             self.scale_classifiers[scale] = classifier
@@ -1105,13 +1115,13 @@ def predict_new_interaction(drug_name, food_name, model=None, return_risk=True):
     # Create features
     try:
         X_new, _ = create_enhanced_features(new_df)
-        # Ensure all required columns exist
-        for col in feature_info['feature_names']:
-            if col not in X_new.columns:
-                X_new[col] = 0
-
-        # Ensure same order and only required columns
-        X_new = X_new.reindex(columns=feature_info['feature_names'], fill_value=0)
+        # Ensure all required columns exist and same order
+        missing_cols = set(feature_info['feature_names']) - set(X_new.columns)
+        for col in missing_cols:
+            X_new[col] = 0
+            
+        # Ensure same order as training data
+        X_new = X_new[feature_info['feature_names']]
         
         # Scale features if needed
         if model.__class__.__name__ == 'MLPClassifier':

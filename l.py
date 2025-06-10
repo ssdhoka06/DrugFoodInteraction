@@ -1,4 +1,3 @@
-
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -8,137 +7,21 @@ from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.metrics import (classification_report, confusion_matrix, roc_auc_score, 
                            roc_curve, accuracy_score, precision_score, recall_score, f1_score)
 from sklearn.preprocessing import LabelEncoder
-from sklearn.decomposition import PCA
+from sklearn.feature_extraction.text import TfidfVectorizer
 import xgboost as xgb
 from collections import Counter
 import pickle
 import warnings
 warnings.filterwarnings('ignore')
 
-# BioBERT and Transformers imports
-import torch
-import torch.nn as nn
-from transformers import AutoTokenizer, AutoModel
-import subprocess
-import sys
-
-# Set up device for M3 GPU
-device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
-print(f"Using device: {device}")
-
 # Set random seeds for reproducibility
 np.random.seed(42)
-torch.manual_seed(42)
-if device.type == "mps":
-    torch.mps.manual_seed(42)
 
 # Dataset path
 df2 = '/Users/sachidhoka/Desktop/food-drug interactions.csv'
 
-class BioBERTEmbedder:
-    """BioBERT embedder for drug and food entities"""
-    
-    def __init__(self, device='cpu'):
-        self.device = device
-        self.tokenizer = None
-        self.model = None
-        self.load_models()
-    
-    def install_requirements(self):
-        """Install required transformers package"""
-        try:
-            import transformers
-            print("✅ Transformers already installed")
-            return True
-        except ImportError:
-            print("📦 Installing transformers...")
-            try:
-                subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'transformers'])
-                print("✅ Transformers installed successfully")
-                return True
-            except Exception as e:
-                print(f"❌ Failed to install transformers: {e}")
-                return False
-    
-    def load_models(self):
-        """Load BioBERT models with fallback options"""
-        print("🧠 Loading BioBERT models...")
-        
-        if not self.install_requirements():
-            raise RuntimeError("Failed to install required packages")
-        
-        try:
-            biobert_models = [
-                ('dmis-lab/biobert-base-cased-v1.1', 'BioBERT-v1.1'),
-                ('dmis-lab/biobert-v1.1-pubmed', 'BioBERT-PubMed'),
-                ('allenai/scibert_scivocab_uncased', 'SciBERT'),
-                ('bert-base-uncased', 'BERT-base')
-            ]
-            
-            for model_name, model_type in biobert_models:
-                try:
-                    print(f"🔄 Loading {model_type}...")
-                    self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-                    self.model = AutoModel.from_pretrained(
-                        model_name,
-                        torch_dtype=torch.float32
-                    )
-                    self.model.eval()
-                    self.model.to(self.device)
-                    print(f"✅ {model_type} loaded successfully")
-                    self.model_name = model_type
-                    break
-                except Exception as e:
-                    print(f"❌ {model_type} failed: {e}")
-                    continue
-            else:
-                raise RuntimeError("All BioBERT models failed to load")
-            
-        except Exception as e:
-            print(f"❌ Critical error loading models: {e}")
-            raise
-    
-    def get_embeddings(self, texts, batch_size=32):
-        """Get BioBERT embeddings for texts"""
-        if isinstance(texts, str):
-            texts = [texts]
-        
-        embeddings = []
-        
-        for i in range(0, len(texts), batch_size):
-            batch_texts = texts[i:i + batch_size]
-            
-            inputs = self.tokenizer(
-                batch_texts,
-                padding=True,
-                truncation=True,
-                max_length=128,
-                return_tensors='pt'
-            ).to(self.device)
-            
-            with torch.no_grad():
-                outputs = self.model(**inputs)
-                batch_embeddings = outputs.last_hidden_state[:, 0, :].cpu().numpy()
-                embeddings.extend(batch_embeddings)
-        
-        return np.array(embeddings)
-    
-    def get_similarity_features(self, drug_embeddings, food_embeddings):
-        """Calculate similarity features between drug and food embeddings"""
-        cos_sim = np.sum(drug_embeddings * food_embeddings, axis=1) / (
-            np.linalg.norm(drug_embeddings, axis=1) * np.linalg.norm(food_embeddings, axis=1)
-        )
-        euclidean_dist = np.linalg.norm(drug_embeddings - food_embeddings, axis=1)
-        manhattan_dist = np.sum(np.abs(drug_embeddings - food_embeddings), axis=1)
-        dot_product = np.sum(drug_embeddings * food_embeddings, axis=1)
-        
-        return np.column_stack([cos_sim, euclidean_dist, manhattan_dist, dot_product])
-
-print("🚀 STARTING DRUG-FOOD INTERACTION PREDICTOR WITH BIOBERT")
-print("=" * 70)
-
-# Initialize BioBERT embedder
-biobert_embedder = BioBERTEmbedder(device=device)
+print("🚀 STARTING DRUG-FOOD INTERACTION PREDICTOR")
+print("=" * 60)
 
 # Data preprocessing
 print("\n📋 DATA PREPROCESSING")
@@ -307,27 +190,63 @@ print(f"Final dataset: {len(df_final)} samples")
 print(f"Positive interactions: {len(df_clean)}")
 print(f"Negative interactions: {len(df_negatives)}")
 
-# Feature engineering
-print("\n🔧 BIOBERT FEATURE ENGINEERING")
+# Feature engineering (without BioBERT)
+print("\n🔧 FEATURE ENGINEERING")
 print("-" * 40)
 
-df_final['drug_context'] = df_final['drug'].apply(
-    lambda x: f"pharmaceutical drug medication {x} therapeutic agent"
-)
-df_final['food_context'] = df_final['food'].apply(
-    lambda x: f"food nutrition dietary item {x} consumable"
-)
+def create_text_features(df):
+    """Create TF-IDF features for drug and food names"""
+    print("Creating TF-IDF features...")
+    
+    # Combine drug and food texts
+    drug_texts = df['drug'].tolist()
+    food_texts = df['food'].tolist()
+    
+    # Create TF-IDF vectorizers
+    drug_vectorizer = TfidfVectorizer(max_features=100, ngram_range=(1, 2), lowercase=True)
+    food_vectorizer = TfidfVectorizer(max_features=100, ngram_range=(1, 2), lowercase=True)
+    
+    # Fit and transform
+    drug_tfidf = drug_vectorizer.fit_transform(drug_texts).toarray()
+    food_tfidf = food_vectorizer.fit_transform(food_texts).toarray()
+    
+    # Create DataFrames
+    drug_tfidf_df = pd.DataFrame(drug_tfidf, columns=[f'drug_tfidf_{i}' for i in range(drug_tfidf.shape[1])])
+    food_tfidf_df = pd.DataFrame(food_tfidf, columns=[f'food_tfidf_{i}' for i in range(food_tfidf.shape[1])])
+    
+    return drug_tfidf_df, food_tfidf_df, drug_vectorizer, food_vectorizer
 
-print("📊 Computing drug embeddings...")
-drug_embeddings = biobert_embedder.get_embeddings(df_final['drug_context'].tolist())
-print(f"Drug embeddings shape: {drug_embeddings.shape}")
-
-print("📊 Computing food embeddings...")
-food_embeddings = biobert_embedder.get_embeddings(df_final['food_context'].tolist())
-print(f"Food embeddings shape: {food_embeddings.shape}")
-
-print("📊 Computing similarity features...")
-similarity_features = biobert_embedder.get_similarity_features(drug_embeddings, food_embeddings)
+def create_interaction_features(df):
+    """Create interpretable interaction features"""
+    print("Creating interaction features...")
+    
+    features = pd.DataFrame()
+    
+    # String matching features
+    features['drug_food_char_overlap'] = df.apply(
+        lambda x: len(set(x['drug']) & set(x['food'])) / max(len(x['drug']), len(x['food'])), axis=1
+    )
+    
+    features['drug_food_length_ratio'] = df.apply(
+        lambda x: len(x['drug']) / len(x['food']) if len(x['food']) > 0 else 0, axis=1
+    )
+    
+    # Known interaction patterns
+    features['same_first_letter'] = (df['drug'].str[0] == df['food'].str[0]).astype(int)
+    
+    # Drug-specific features
+    features['drug_length'] = df['drug'].str.len()
+    features['food_length'] = df['food'].str.len()
+    
+    # Vowel/consonant ratios (simple linguistic features)
+    features['drug_vowel_ratio'] = df['drug'].apply(
+        lambda x: sum(1 for c in x.lower() if c in 'aeiou') / len(x) if len(x) > 0 else 0
+    )
+    features['food_vowel_ratio'] = df['food'].apply(
+        lambda x: sum(1 for c in x.lower() if c in 'aeiou') / len(x) if len(x) > 0 else 0
+    )
+    
+    return features
 
 def create_risk_score(drug_cat, food_cat, mechanism):
     """Create risk score based on known interactions"""
@@ -338,32 +257,31 @@ def create_risk_score(drug_cat, food_cat, mechanism):
     else:
         return 1
 
+# Create all features
 df_final['risk_score'] = df_final.apply(
     lambda x: create_risk_score(x['drug_category'], x['food_category'], x['mechanism']), 
     axis=1
 )
 
+# Create categorical dummy variables
 drug_dummies = pd.get_dummies(df_final['drug_category'], prefix='drug').astype(int)
 food_dummies = pd.get_dummies(df_final['food_category'], prefix='food').astype(int)
 mechanism_dummies = pd.get_dummies(df_final['mechanism'], prefix='mechanism').astype(int)
 
-pca_drug = PCA(n_components=50)
-pca_food = PCA(n_components=50)
+# Create text features
+drug_tfidf_df, food_tfidf_df, drug_vectorizer, food_vectorizer = create_text_features(df_final)
 
-drug_embeddings_reduced = pca_drug.fit_transform(drug_embeddings)
-food_embeddings_reduced = pca_food.fit_transform(food_embeddings)
+# Create interaction features
+interaction_features = create_interaction_features(df_final)
 
-biobert_drug_reduced_df = pd.DataFrame(drug_embeddings_reduced, columns=[f'drug_pca_{i}' for i in range(50)])
-biobert_food_reduced_df = pd.DataFrame(food_embeddings_reduced, columns=[f'food_pca_{i}' for i in range(50)])
-similarity_df = pd.DataFrame(similarity_features, columns=['cosine_sim', 'euclidean_dist', 'manhattan_dist', 'dot_product'])
-
+# Combine all features
 X = pd.concat([
-    biobert_drug_reduced_df,
-    biobert_food_reduced_df,
-    similarity_df,
     drug_dummies, 
     food_dummies, 
-    mechanism_dummies, 
+    mechanism_dummies,
+    drug_tfidf_df,
+    food_tfidf_df,
+    interaction_features,
     df_final[['risk_score']]
 ], axis=1)
 
@@ -372,6 +290,14 @@ feature_cols = list(X.columns)
 X = X.astype(float)
 
 print(f"Final feature matrix shape: {X.shape}")
+print(f"Feature categories:")
+print(f"- Drug categories: {len(drug_dummies.columns)}")
+print(f"- Food categories: {len(food_dummies.columns)}")
+print(f"- Mechanism categories: {len(mechanism_dummies.columns)}")
+print(f"- Drug TF-IDF features: {len(drug_tfidf_df.columns)}")
+print(f"- Food TF-IDF features: {len(food_tfidf_df.columns)}")
+print(f"- Interaction features: {len(interaction_features.columns)}")
+print(f"- Risk score: 1")
 
 # Model training
 print("\n🤖 MODEL TRAINING")
@@ -439,14 +365,16 @@ gb_model.fit(X_train, y_train)
 gb_pred = gb_model.predict(X_test)
 gb_pred_proba = gb_model.predict_proba(X_test)[:, 1]
 
-xgb_metrics = calculate_metrics(y_test, xgb_pred, xgb_pred_proba, "XGBoost + BioBERT")
-rf_metrics = calculate_metrics(y_test, rf_pred, rf_pred_proba, "Random Forest + BioBERT")
-gb_metrics = calculate_metrics(y_test, gb_pred, gb_pred_proba, "Gradient Boosting + BioBERT")
+# Calculate metrics
+xgb_metrics = calculate_metrics(y_test, xgb_pred, xgb_pred_proba, "XGBoost")
+rf_metrics = calculate_metrics(y_test, rf_pred, rf_pred_proba, "Random Forest")
+gb_metrics = calculate_metrics(y_test, gb_pred, gb_pred_proba, "Gradient Boosting")
 
 metrics_df = pd.DataFrame([xgb_metrics, rf_metrics, gb_metrics])
 print("\n📊 MODEL COMPARISON")
 print(metrics_df.round(4).to_string(index=False))
 
+# Select best model
 best_model_idx = metrics_df['f1_score'].idxmax()
 best_model_name = metrics_df.loc[best_model_idx, 'model_name']
 best_f1_score = metrics_df.loc[best_model_idx, 'f1_score']
@@ -460,19 +388,155 @@ else:
 
 print(f"\n🏆 BEST MODEL: {best_model_name} (F1-Score: {best_f1_score:.4f})")
 
-# Save model
+# Feature importance analysis for XAI
+print("\n🔍 FEATURE IMPORTANCE ANALYSIS (XAI)")
+print("-" * 50)
+
+if hasattr(best_model, 'feature_importances_'):
+    feature_importance = pd.DataFrame({
+        'feature': feature_cols,
+        'importance': best_model.feature_importances_
+    }).sort_values('importance', ascending=False)
+    
+    print("Top 20 Most Important Features:")
+    print(feature_importance.head(20).to_string(index=False))
+    
+    # Visualize top features
+    plt.figure(figsize=(12, 8))
+    top_features = feature_importance.head(15)
+    plt.barh(range(len(top_features)), top_features['importance'])
+    plt.yticks(range(len(top_features)), top_features['feature'])
+    plt.xlabel('Feature Importance')
+    plt.title(f'Top 15 Feature Importances - {best_model_name}')
+    plt.gca().invert_yaxis()
+    plt.tight_layout()
+    plt.show()
+
+# Detailed classification report
+print(f"\n📋 DETAILED CLASSIFICATION REPORT - {best_model_name}")
+print("-" * 60)
+print(classification_report(y_test, best_pred))
+
+# Confusion matrix
+print("\n🔢 CONFUSION MATRIX")
+print("-" * 30)
+cm = confusion_matrix(y_test, best_pred)
+print(cm)
+print(f"True Negatives: {cm[0,0]}")
+print(f"False Positives: {cm[0,1]}")
+print(f"False Negatives: {cm[1,0]}")
+print(f"True Positives: {cm[1,1]}")
+
+# Save model package
 model_package = {
     'model': best_model,
     'feature_columns': feature_cols,
-    'pca_drug': pca_drug,
-    'pca_food': pca_food,
+    'drug_vectorizer': drug_vectorizer,
+    'food_vectorizer': food_vectorizer,
     'model_name': best_model_name,
     'drug_categories': drug_categories,
     'food_categories': food_categories,
-    'high_risk_interactions': high_risk_interactions
+    'high_risk_interactions': high_risk_interactions,
+    'feature_importance': feature_importance if 'feature_importance' in locals() else None
 }
 
-with open('/Users/sachidhoka/Desktop/biobert_drug_food_interaction_model.pkl', 'wb') as f:
+with open('/Users/sachidhoka/Desktop/drug_food_interaction_model.pkl', 'wb') as f:
     pickle.dump(model_package, f)
 
-print("✅ Model saved to '/Users/sachidhoka/Desktop/biobert_drug_food_interaction_model.pkl'")
+print(f"\n✅ Model saved to '/Users/sachidhoka/Desktop/drug_food_interaction_model.pkl'")
+
+# Prediction function for new interactions
+def predict_interaction(drug_name, food_name, model_package):
+    """Predict interaction for new drug-food pair"""
+    
+    # Create temporary dataframe
+    temp_df = pd.DataFrame({
+        'drug': [drug_name.lower().strip()],
+        'food': [food_name.lower().strip()]
+    })
+    
+    # Apply same preprocessing
+    temp_df['drug_category'] = temp_df['drug'].apply(lambda x: categorize_entity(x, drug_categories))
+    temp_df['food_category'] = temp_df['food'].apply(lambda x: categorize_entity(x, food_categories))
+    temp_df['mechanism'] = temp_df.apply(
+        lambda x: get_interaction_mechanism(x['drug_category'], x['food_category']), 
+        axis=1
+    )
+    temp_df['risk_score'] = temp_df.apply(
+        lambda x: create_risk_score(x['drug_category'], x['food_category'], x['mechanism']), 
+        axis=1
+    )
+    
+    # Create features (same as training)
+    drug_dummies_temp = pd.get_dummies(temp_df['drug_category'], prefix='drug').reindex(
+        columns=[col for col in feature_cols if col.startswith('drug_')], fill_value=0
+    )
+    food_dummies_temp = pd.get_dummies(temp_df['food_category'], prefix='food').reindex(
+        columns=[col for col in feature_cols if col.startswith('food_')], fill_value=0
+    )
+    mechanism_dummies_temp = pd.get_dummies(temp_df['mechanism'], prefix='mechanism').reindex(
+        columns=[col for col in feature_cols if col.startswith('mechanism_')], fill_value=0
+    )
+    
+    # TF-IDF features
+    drug_tfidf_temp = model_package['drug_vectorizer'].transform([drug_name]).toarray()
+    food_tfidf_temp = model_package['food_vectorizer'].transform([food_name]).toarray()
+    
+    drug_tfidf_df_temp = pd.DataFrame(drug_tfidf_temp, columns=[f'drug_tfidf_{i}' for i in range(drug_tfidf_temp.shape[1])])
+    food_tfidf_df_temp = pd.DataFrame(food_tfidf_temp, columns=[f'food_tfidf_{i}' for i in range(food_tfidf_temp.shape[1])])
+    
+    # Interaction features
+    interaction_features_temp = create_interaction_features(temp_df)
+    
+    # Combine features
+    X_temp = pd.concat([
+        drug_dummies_temp, 
+        food_dummies_temp, 
+        mechanism_dummies_temp,
+        drug_tfidf_df_temp,
+        food_tfidf_df_temp,
+        interaction_features_temp,
+        temp_df[['risk_score']]
+    ], axis=1)
+    
+    # Ensure all columns are present
+    X_temp = X_temp.reindex(columns=feature_cols, fill_value=0)
+    
+    # Predict
+    prediction = model_package['model'].predict(X_temp)[0]
+    probability = model_package['model'].predict_proba(X_temp)[0]
+    
+    return {
+        'interaction_predicted': bool(prediction),
+        'interaction_probability': float(probability[1]),
+        'drug_category': temp_df['drug_category'].iloc[0],
+        'food_category': temp_df['food_category'].iloc[0],
+        'mechanism': temp_df['mechanism'].iloc[0],
+        'risk_score': temp_df['risk_score'].iloc[0]
+    }
+
+# Example predictions
+print("\n🧪 EXAMPLE PREDICTIONS")
+print("-" * 40)
+
+test_pairs = [
+    ('warfarin', 'spinach'),
+    ('simvastatin', 'grapefruit'),
+    ('aspirin', 'pizza'),
+    ('metformin', 'banana')
+]
+
+for drug, food in test_pairs:
+    result = predict_interaction(drug, food, model_package)
+    print(f"\n{drug.capitalize()} + {food.capitalize()}:")
+    print(f"  Interaction Risk: {'HIGH' if result['interaction_predicted'] else 'LOW'}")
+    print(f"  Probability: {result['interaction_probability']:.3f}")
+    print(f"  Drug Category: {result['drug_category']}")
+    print(f"  Food Category: {result['food_category']}")
+    print(f"  Mechanism: {result['mechanism']}")
+    print(f"  Risk Score: {result['risk_score']}")
+
+print(f"\n🎉 ANALYSIS COMPLETE!")
+print(f"✅ Model trained and saved successfully")
+print(f"🔍 Features are interpretable for XAI")
+print(f"📊 Best model: {best_model_name} with F1-Score: {best_f1_score:.4f}")

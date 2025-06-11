@@ -1,3 +1,4 @@
+
 # XAI IMPLEMENTATION
 print("\n🔍 PHASE 4: EXPLAINABLE AI (XAI) IMPLEMENTATION")
 print("-" * 50)
@@ -73,13 +74,13 @@ class DrugFoodXAI:
                     'feature_names': self.feature_names
                 }
                 
-                # Plot SHAP waterfall
-                shap.plots.waterfall(shap.Explanation(
-                    values=shap_values[0],
-                    base_values=explanations['shap']['base_value'],
-                    data=instance.values[0],
-                    feature_names=self.feature_names
-                ))
+                # Print SHAP values instead of plotting
+                print("Top 5 SHAP feature contributions:")
+                shap_df = pd.DataFrame({
+                    'feature': self.feature_names,
+                    'shap_value': shap_values[0]
+                }).sort_values('shap_value', key=abs, ascending=False)
+                print(shap_df.head())
                 
             except Exception as e:
                 print(f"⚠️ SHAP explanation failed: {e}")
@@ -95,8 +96,7 @@ class DrugFoodXAI:
                 
                 explanations['lime'] = lime_exp
                 
-                # Show LIME explanation
-                lime_exp.show_in_notebook(show_table=True)
+                
                 
             except Exception as e:
                 print(f"⚠️ LIME explanation failed: {e}")
@@ -120,11 +120,14 @@ class DrugFoodXAI:
             if isinstance(shap_values, list):
                 shap_values = shap_values[1]  # For binary classification
             
-            # Summary plot
-            shap.summary_plot(shap_values, test_subset, feature_names=self.feature_names)
-            
-            # Feature importance plot
-            shap.summary_plot(shap_values, test_subset, feature_names=self.feature_names, plot_type="bar")
+            # Print feature importance instead of plotting
+            mean_shap = np.abs(shap_values).mean(0)
+            importance_df = pd.DataFrame({
+                'feature': self.feature_names,
+                'importance': mean_shap
+            }).sort_values('importance', ascending=False)
+            print("Top 10 Most Important Features:")
+            print(importance_df.head(10))
             
             return shap_values
             
@@ -145,9 +148,6 @@ class DrugFoodXAI:
             # Get interaction values
             test_subset = self.X_test.sample(min(50, len(self.X_test)))
             interaction_values = self.shap_explainer.shap_interaction_values(test_subset)
-            
-            # Plot interaction for top features
-            shap.summary_plot(interaction_values, test_subset, feature_names=self.feature_names)
             
             return interaction_values
             
@@ -219,8 +219,6 @@ class DrugFoodXAI:
             showlegend=False,
             height=400
         )
-        
-        fig.show()
         
         return result
 
@@ -344,7 +342,6 @@ def create_interactive_dashboard():
     )
     
     fig.update_layout(height=800, title_text="Drug-Food Interaction XAI Dashboard")
-    fig.show()
 
 def explain_model_behavior():
     """Explain overall model behavior patterns"""
@@ -651,56 +648,18 @@ for drug, food in test_pairs:
 print("\n🔍 EXECUTING COMPREHENSIVE XAI ANALYSIS")
 print("=" * 60)
 
-# 1. Explain specific predictions
-print("\n1️⃣ INDIVIDUAL PREDICTION EXPLANATIONS")
-high_risk_indices = df_final[df_final['risk_level'] == 'HIGH'].index[:3]
-for idx in high_risk_indices:
-    if idx < len(X_test):
-        try:
-            xai_system.explain_prediction(idx, method='shap')
-        except Exception as e:
-            print(f"⚠️ Could not explain prediction {idx}: {e}")
+## Simple test without visualizations
+def test_xai_simple():
+    print("\n🔍 SIMPLE XAI TEST")
+    print("-" * 30)
+    
+    # Test a few predictions
+    test_pairs = [('warfarin', 'spinach'), ('aspirin', 'coffee')]
+    
+    for drug, food in test_pairs:
+        result = predict_new_interaction_with_explanation(drug, food, explain=False)
+        if 'error' not in result:
+            print(f"{drug} + {food}: {'INTERACTION' if result['interaction_predicted'] else 'NO INTERACTION'} (p={result['probability']:.3f})")
 
-# 2. Global feature importance
-print("\n2️⃣ GLOBAL FEATURE IMPORTANCE")
-try:
-    global_shap = xai_system.global_feature_importance()
-except Exception as e:
-    print(f"⚠️ Global analysis failed: {e}")
-
-# 3. Feature interactions
-print("\n3️⃣ FEATURE INTERACTION ANALYSIS")
-try:
-    interactions = xai_system.feature_interaction_analysis()
-except Exception as e:
-    print(f"⚠️ Interaction analysis failed: {e}")
-
-# 4. Decision pathways
-print("\n4️⃣ DECISION PATHWAY ANALYSIS")
-pathway_examples = [('warfarin', 'spinach'), ('simvastatin', 'grapefruit'), ('aspirin', 'coffee')]
-for drug, food in pathway_examples:
-    try:
-        xai_system.decision_pathway_analysis(drug, food)
-    except Exception as e:
-        print(f"⚠️ Pathway analysis failed for {drug}-{food}: {e}")
-
-# 5. Case studies
-print("\n5️⃣ CASE STUDY ANALYSIS")
-try:
-    conduct_case_studies()
-except Exception as e:
-    print(f"⚠️ Case study analysis failed: {e}")
-
-# 6. Interactive dashboard
-print("\n6️⃣ INTERACTIVE DASHBOARD")
-try:
-    create_interactive_dashboard()
-except Exception as e:
-    print(f"⚠️ Dashboard creation failed: {e}")
-
-# 7. Model behavior analysis
-print("\n7️⃣ MODEL BEHAVIOR ANALYSIS")
-try:
-    explain_model_behavior()
-except Exception as e:
-    print(f"⚠️ Behavior analysis failed: {e}")
+# Run simple test
+test_xai_simple()

@@ -1,4 +1,5 @@
 import json
+import sys
 from datetime import datetime
 import pandas as pd
 import numpy as np
@@ -7,7 +8,7 @@ import seaborn as sns
 from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.model_selection import train_test_split, cross_val_score, StratifiedKFold
 from sklearn.metrics.pairwise import cosine_similarity
-from sklearn.ensemble import ExtraTreesClassifier, VotingClassifier, RandomForestClassifier
+from sklearn.ensemble import ExtraTreesClassifier, VotingClassifier, RandomForestClassifier, GradientBoostingClassifier
 from sklearn.neural_network import MLPClassifier
 from sklearn.metrics import (classification_report, confusion_matrix, roc_auc_score, 
                            roc_curve, accuracy_score, precision_score, recall_score, 
@@ -15,17 +16,39 @@ from sklearn.metrics import (classification_report, confusion_matrix, roc_auc_sc
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.svm import SVC
 from sklearn.linear_model import LogisticRegression
-import lightgbm as lgb
-import catboost as cb
-from collections import Counter
-import pickle
-import warnings
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.decomposition import TruncatedSVD
 import re
 import networkx as nx
 from scipy.sparse import csr_matrix
-from sklearn.base import BaseEstimator, ClassifierMixin
+import pickle
+import warnings
+from collections import Counter
+
+# Install required packages if not available
+try:
+    import lightgbm as lgb
+except ImportError:
+    print("Installing lightgbm...")
+    import subprocess
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "lightgbm"])
+    import lightgbm as lgb
+
+try:
+    import catboost as cb
+except ImportError:
+    print("Installing catboost...")
+    import subprocess
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "catboost"])
+    import catboost as cb
+
+try:
+    import xgboost as xgb
+    XGBOOST_AVAILABLE = True
+except ImportError:
+    print("⚠️ XGBoost not available. Skipping XGBoost model.")
+    XGBOOST_AVAILABLE = False
+
 warnings.filterwarnings('ignore')
 
 # Set random seeds for reproducibility
@@ -38,12 +61,9 @@ print("=" * 80)
 print("\n📋 PHASE 1: ENHANCED DATA PREPROCESSING")
 print("-" * 40)
 
-def load_and_clean_foodrugs(filepath=None):
+def load_and_clean_foodrugs(filepath='/Users/sachidhoka/Desktop/food-drug interactions.csv'):
     """Load and clean FooDrugs dataset with enhanced preprocessing"""
     print("Loading FooDrugs dataset...")
-    
-    if filepath is None:
-        filepath = '/content/drive/MyDrive/ASEP_2/food-drug interactions.csv'
     
     try:
         for encoding in ['utf-8', 'latin-1', 'cp1252']:
@@ -57,7 +77,7 @@ def load_and_clean_foodrugs(filepath=None):
             raise Exception("Could not load file with any encoding")
             
     except FileNotFoundError:
-        print("⚠️ FooDrugs file not found. Creating enhanced sample data...")
+        print(f"⚠️ FooDrugs file not found at {filepath}. Creating enhanced sample data...")
         # Create comprehensive sample data
         drugs = ['warfarin', 'simvastatin', 'tetracycline', 'aspirin', 'metformin', 
                 'lisinopril', 'sertraline', 'digoxin', 'amoxicillin', 'atorvastatin',
@@ -464,15 +484,6 @@ results = []
 
 print("🔬 Training Specified Models...")
 print("-" * 30)
-
-# Import additional required libraries
-from sklearn.ensemble import GradientBoostingClassifier
-try:
-    import xgboost as xgb
-    XGBOOST_AVAILABLE = True
-except ImportError:
-    print("⚠️ XGBoost not available. Skipping XGBoost model.")
-    XGBOOST_AVAILABLE = False
 
 # 1. LightGBM
 lgb_model = lgb.LGBMClassifier(

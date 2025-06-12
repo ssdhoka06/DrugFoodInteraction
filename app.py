@@ -24,7 +24,7 @@ from functools import wraps
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder='static', template_folder='templates')
 CORS(app)  # Enable CORS for all routes
 app.secret_key = os.environ.get('SECRET_KEY', os.urandom(24))
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
@@ -127,21 +127,25 @@ def json_response(func):
             }), 500
     return wrapper
 
+# Define paths to data files
+DATA_DIR = os.path.join(os.path.dirname(__file__), 'data')
+MODELS_DIR = os.path.join(os.path.dirname(__file__), 'models')
+
 # Load and cache data
 try:
-    df = pd.read_csv("data/balanced_drug_food_interactions.csv")
+    df = pd.read_csv(os.path.join(DATA_DIR, 'balanced_drug_food_interactions.csv'))
     all_drugs = sorted(set(df['drug'].dropna().str.strip()))
     all_foods = sorted(set(df['food'].dropna().str.strip()))
     
     # Load drug and food categories
-    with open('data/drug_categories.json') as f:
+    with open(os.path.join(DATA_DIR, 'drug_categories.json')) as f:
         drug_categories = json.load(f)
     
-    with open('data/food_categories.json') as f:
+    with open(os.path.join(DATA_DIR, 'food_categories.json')) as f:
         food_categories = json.load(f)
     
     # Load high risk interactions
-    with open('data/high_risk_interactions.json') as f:
+    with open(os.path.join(DATA_DIR, 'high_risk_interactions.json')) as f:
         high_risk_interactions = json.load(f)
 except Exception as e:
     logger.error(f"Error loading data files: {str(e)}")
@@ -153,7 +157,7 @@ except Exception as e:
 
 # Load ML model
 try:
-    with open('models/best_drug_food_interaction_model.pkl', 'rb') as f:
+    with open(os.path.join(MODELS_DIR, 'best_drug_food_interaction_model.pkl'), 'rb') as f:
         model_package = pickle.load(f)
     best_model = model_package['model']
     feature_info = model_package['feature_info']
@@ -795,4 +799,4 @@ if __name__ == '__main__':
     # Update research articles on startup (in production, run this as a scheduled task)
     update_research_articles()
     
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=True, host='0.0.0.0', port=5001)

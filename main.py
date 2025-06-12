@@ -1,3 +1,13 @@
+# XAI Configuration
+XAI_CONFIG = {
+    'max_shap_samples': 100,  # Limit SHAP samples for performance
+    'max_lime_features': 10,  # Limit LIME features displayed
+    'batch_explanation_limit': 20,  # Max explanations per batch request
+    'dashboard_refresh_samples': 50,  # Samples for dashboard updates
+    'enable_global_explanations': True,
+    'enable_local_explanations': True,
+    'cache_explanations': True  # Cache explanations for repeated requests
+}
 import json
 import sys
 from datetime import datetime
@@ -24,6 +34,7 @@ from scipy.sparse import csr_matrix
 import pickle
 import warnings
 from collections import Counter
+from functools import lru_cache
 
 # Install required packages if not available
 try:
@@ -709,21 +720,22 @@ class DrugFoodXAI:
         self.feature_names = feature_names
         self.shap_explainer = None
         self.lime_explainer = None
+        self.clinical_features = [f for f in feature_names if any(prefix in f for prefix in ['drug_', 'food_', 'mechanism_', 'risk_'])]
     
     def initialize_explainers(self):
-        """Initialize SHAP and LIME explainers with caching for performance"""
+        """Initialize SHAP and LIME explainers with increased background data"""
         print("🔧 Initializing XAI explainers...")
         
         if hasattr(self.model, 'predict_proba'):
             try:
-                background_data = self.X_train.sample(min(50, len(self.X_train)), random_state=42)
+                background_data = self.X_train.sample(min(100, len(self.X_train)), random_state=42)
                 self.shap_explainer = shap.TreeExplainer(self.model, background_data)
                 print("✅ SHAP TreeExplainer initialized")
             except:
                 try:
                     self.shap_explainer = shap.KernelExplainer(
                         self.model.predict_proba, 
-                        self.X_train.sample(min(25, len(self.X_train)), random_state=42)
+                        self.X_train.sample(min(50, len(self.X_train)), random_state=42)
                     )
                     print("✅ SHAP KernelExplainer initialized")
                 except Exception as e:
@@ -740,8 +752,72 @@ class DrugFoodXAI:
         except Exception as e:
             print(f"⚠️ LIME initialization failed: {e}")
     
-    def explain_prediction(self, instance_idx):
-        """Explain a specific prediction with compact output for Streamlit"""
+    def get_visualization_data(self, instance_idx, drug_name=None, food_name=None):
+        """Formats XAI data for frontend with simplified labels"""
+        instance = self.X_test.iloc[instance_idx:instance_idx+1]
+        
+        try:
+            shap_values = self.shap_explainer.shap_values(instance)
+            if isinstance(shap_values, list):
+                shap_values = shap_values[1]
+                
+            base_value = self.shap_explainer.expected_value[1] if isinstance(self.shap_explainer.expected_value, list) else self.shap_explainer.expected_value
+            
+            # Simplify feature names for non-technical users
+            simplified_names = []
+            for f in self.feature_names:
+                if 'drug_' in f:
+                    simplified_names.append(f"Medication type: {f.replace('drug_', '')}")
+                elif 'food_' in f:
+                    simplified_names.append(f"Food type: {f.replace('food_', '')}")
+                elif 'mechanism_' in f:
+                    simplified_names.append(f"Interaction cause: {f.replace('mechanism_', '')}")
+                elif 'risk_' in f:
+                    simplified_names.append(f"Risk level: {f.replace('risk_', '')}")
+                else:
+                    simplified_names.append(f)
+            
+            # Prepare waterfall data with clinical features prioritized
+            waterfall_data = [
+                {'feature': simplified_names[i], 'value': float(shap_values[0][i]), 'original_feature': self.feature_names[i]}
+                for i in range(len(self.feature_names))
+                if abs(shap_values[0][i]) > 0 and self.feature_names[i] in self.clinical_features
+            ]
+            
+            return {
+                'shap_values': shap_values[0].tolist(),
+                'feature_names': simplified_names,
+                'base_value': float(base_value),
+                'waterfall_data': sorted(waterfall_data, key=lambda x: abs(x['value']), reverse=True)[:5],
+                'context': {'drug': drug_name, 'food': food_name} if drug_name and food_name else None
+            }
+        except Exception as e:
+            return {'error': f'Visualization data generation failed: {str(e)}'}
+    
+    def get_mobile_friendly_explanation(self, drug, food):
+        """Simplified explanation for mobile devices with clinical focus"""
+        prediction = self.cached_prediction(drug, food)
+        risk_messages = {
+            'HIGH': '🚨 Avoid this combination - High risk interaction',
+            'MODERATE': '⚠️ Use caution - Monitor for side effects',
+            'LOW': '✅ Safe to combine - Minimal risk'
+        }
+        return {
+            'drug': drug.title(),
+            'food': food.title(),
+            'risk_level': prediction['risk_level'],
+            'short_advice': risk_messages.get(prediction['risk_level'], 'Consult your doctor'),
+            'icon': '⚠️' if prediction['interaction_predicted'] else '✅',
+            'mechanism': prediction['mechanism'].replace('_', ' ').title() if prediction['mechanism'] != 'unknown' else 'Not fully understood'
+        }
+    
+    @lru_cache(maxsize=1000)
+    def cached_prediction(self, drug, food):
+        """Cached prediction for improved performance"""
+        return predict_new_interaction(drug, food)
+    
+    def explain_prediction(self, instance_idx, drug_name=None, food_name=None):
+        """Explain a specific prediction with clinical focus"""
         instance = self.X_test.iloc[instance_idx:instance_idx+1]
         pred_label = self.model.predict(instance)[0]
         pred_proba = self.model.predict_proba(instance)[0, 1] if hasattr(self.model, 'predict_proba') else pred_label
@@ -757,7 +833,9 @@ class DrugFoodXAI:
                 shap_df = pd.DataFrame({
                     'Feature': self.feature_names,
                     'SHAP Value': shap_values[0]
-                }).sort_values('SHAP Value', key=abs, ascending=False).head(5)
+                })
+                shap_df = shap_df[shap_df['Feature'].isin(self.clinical_features)]
+                shap_df = shap_df.sort_values('SHAP Value', key=abs, ascending=False).head(3)
                 
                 explanations['shap'] = shap_df
             except Exception as e:
@@ -768,20 +846,161 @@ class DrugFoodXAI:
                 lime_exp = self.lime_explainer.explain_instance(
                     instance.values[0],
                     self.model.predict_proba,
-                    num_features=5
+                    num_features=3,
+                    labels=(1,)
                 )
-                explanations['lime'] = pd.DataFrame(lime_exp.as_list(), columns=['Feature', 'LIME Weight'])
+                lime_features = [(f[0], f[1]) for f in lime_exp.as_list() if f[0] in self.clinical_features]
+                explanations['lime'] = pd.DataFrame(lime_features[:3], columns=['Feature', 'LIME Weight'])
             except Exception as e:
                 explanations['lime'] = f"LIME explanation failed: {e}"
         
         return {
+            'drug': drug_name.title() if drug_name else 'Unknown',
+            'food': food_name.title() if food_name else 'Unknown',
             'predicted_label': 'INTERACTION' if pred_label else 'NO INTERACTION',
             'probability': float(pred_proba),
             'explanations': explanations
         }
     
+    def create_shap_waterfall(self, instance_idx, drug_name=None, food_name=None, save_plot=False):
+        """Create SHAP waterfall plot with simplified labels"""
+        if not self.shap_explainer:
+            return None
+        
+        instance = self.X_test.iloc[instance_idx:instance_idx+1]
+        
+        try:
+            shap_values = self.shap_explainer.shap_values(instance)
+            if isinstance(shap_values, list):
+                shap_values = shap_values[1]
+            
+            simplified_names = [
+                f"Medication type: {f.replace('drug_', '')}" if 'drug_' in f else
+                f"Food type: {f.replace('food_', '')}" if 'food_' in f else
+                f"Interaction cause: {f.replace('mechanism_', '')}" if 'mechanism_' in f else
+                f"Risk level: {f.replace('risk_', '')}" if 'risk_' in f else f
+                for f in self.feature_names
+            ]
+            
+            clinical_indices = [i for i, f in enumerate(self.feature_names) if f in self.clinical_features]
+            filtered_shap_values = shap_values[0][clinical_indices]
+            filtered_features = [simplified_names[i] for i in clinical_indices]
+            filtered_data = instance.iloc[0].values[clinical_indices]
+            
+            plt.figure(figsize=(10, 6))
+            shap.waterfall_plot(
+                shap.Explanation(
+                    values=filtered_shap_values,
+                    base_values=self.shap_explainer.expected_value[1] if isinstance(self.shap_explainer.expected_value, list) else self.shap_explainer.expected_value,
+                    data=filtered_data,
+                    feature_names=filtered_features
+                ),
+                max_display=5,
+                show=False
+            )
+            plt.title(f"Interaction Explanation: {drug_name.title()} + {food_name.title()}" if drug_name and food_name else "Interaction Explanation")
+            
+            if save_plot:
+                plt.savefig(f'waterfall_plot_{instance_idx}.png', dpi=300, bbox_inches='tight')
+            
+            return plt.gcf()
+        except Exception as e:
+            return f"Waterfall plotting failed: {e}"
+
+    def create_shap_force_plot(self, instance_idx):
+        """Create SHAP force plot for individual prediction"""
+        if not self.shap_explainer:
+            return None
+        
+        instance = self.X_test.iloc[instance_idx:instance_idx+1]
+        
+        try:
+            shap_values = self.shap_explainer.shap_values(instance)
+            if isinstance(shap_values, list):
+                shap_values = shap_values[1]
+            
+            return shap.force_plot(
+                self.shap_explainer.expected_value[1] if isinstance(self.shap_explainer.expected_value, list) else self.shap_explainer.expected_value,
+                shap_values[0],
+                instance.iloc[0],
+                feature_names=self.feature_names,
+                matplotlib=True,
+                show=False
+            )
+        except Exception as e:
+            return f"Force plot failed: {e}"
+    
+    def create_interactive_dashboard_data(self):
+        """Create comprehensive data for interactive dashboard with clinical focus"""
+        if not self.shap_explainer:
+            return {'error': 'SHAP explainer not available'}
+        
+        try:
+            dashboard_sample = self.X_test.sample(min(100, len(self.X_test)), random_state=42)
+            dashboard_indices = dashboard_sample.index.tolist()
+            
+            shap_values = self.shap_explainer.shap_values(dashboard_sample)
+            if isinstance(shap_values, list):
+                shap_values = shap_values[1]
+            
+            clinical_indices = [i for i, f in enumerate(self.feature_names) if f in self.clinical_features]
+            clinical_shap_values = shap_values[:, clinical_indices]
+            clinical_features = [self.feature_names[i] for i in clinical_indices]
+            
+            summary_data = {
+                'feature_importance': pd.DataFrame({
+                    'feature': clinical_features,
+                    'importance': np.abs(clinical_shap_values).mean(0)
+                }).sort_values('importance', ascending=False).head(10).to_dict('records'),
+                
+                'prediction_distribution': {
+                    'high_risk': int(np.sum(self.model.predict_proba(dashboard_sample)[:, 1] > 0.7)),
+                    'medium_risk': int(np.sum((self.model.predict_proba(dashboard_sample)[:, 1] > 0.3) & 
+                                            (self.model.predict_proba(dashboard_sample)[:, 1] <= 0.7))),
+                    'low_risk': int(np.sum(self.model.predict_proba(dashboard_sample)[:, 1] <= 0.3))
+                },
+                
+                'feature_correlations': self.calculate_feature_correlations(),
+                'sample_explanations': []
+            }
+            
+            for i, idx in enumerate(dashboard_indices[:10]):
+                original_idx = list(self.X_test.index).index(idx)
+                explanation = self.explain_prediction(original_idx)
+                summary_data['sample_explanations'].append({
+                    'index': idx,
+                    'prediction': explanation['predicted_label'],
+                    'probability': explanation['probability'],
+                    'top_features': explanation['explanations'].get('shap', {}).head(3).to_dict('records') if isinstance(explanation['explanations'].get('shap'), pd.DataFrame) else []
+                })
+            
+            return summary_data
+        except Exception as e:
+            return {'error': f'Dashboard data creation failed: {str(e)}'}
+
+    def calculate_feature_correlations(self):
+        """Calculate feature correlations for dashboard"""
+        try:
+            clinical_cols = [f for f in self.X_test.columns if f in self.clinical_features]
+            corr_matrix = self.X_test[clinical_cols].corr()
+            high_corr_pairs = []
+            
+            for i in range(len(corr_matrix.columns)):
+                for j in range(i+1, len(corr_matrix.columns)):
+                    corr_val = corr_matrix.iloc[i, j]
+                    if abs(corr_val) > 0.7:
+                        high_corr_pairs.append({
+                            'feature1': corr_matrix.columns[i],
+                            'feature2': corr_matrix.columns[j],
+                            'correlation': float(corr_val)
+                        })
+            
+            return sorted(high_corr_pairs, key=lambda x: abs(x['correlation']), reverse=True)[:5]
+        except:
+            return []
+    
     def global_feature_importance(self):
-        """Global feature importance analysis optimized for Streamlit"""
+        """Global feature importance analysis with clinical focus"""
         if not self.shap_explainer:
             return None
         
@@ -791,51 +1010,373 @@ class DrugFoodXAI:
             if isinstance(shap_values, list):
                 shap_values = shap_values[1]
             
-            mean_shap = np.abs(shap_values).mean(0)
+            clinical_indices = [i for i, f in enumerate(self.feature_names) if f in self.clinical_features]
+            mean_shap = np.abs(shap_values[:, clinical_indices]).mean(0)
             importance_df = pd.DataFrame({
-                'Feature': self.feature_names,
-                'Importance': mean_shap
-            }).sort_values('Importance', ascending=False).head(10)
+                'Feature': [self.feature_names[i] for i in clinical_indices],
+                'SHAP Value': mean_shap
+            }).sort_values('SHAP Value', ascending=False).head(5)
             
             return importance_df
         except Exception as e:
             return f"Global analysis failed: {e}"
     
-    def decision_pathway_analysis(self, drug_name, food_name):
-        """Trace decision pathway with single, concise output"""
-        result = predict_new_interaction(drug_name, food_name)
-        if 'error' in result:
-            return result
+    def batch_explain_predictions(self, indices_list, max_explanations=10):
+        """Explain multiple predictions efficiently"""
+        explanations = []
+        for idx in indices_list[:max_explanations]:
+            if idx < len(self.X_test):
+                explanations.append(self.explain_prediction(idx))
+        return explanations
+    
+    def quantify_prediction_uncertainty(self, instance_idx, drug_name=None, food_name=None, n_bootstrap=50):
+        """Quantify uncertainty with context"""
+        instance = self.X_test.iloc[instance_idx:instance_idx+1]
         
-        # Consolidated output
-        output = {
-            'drug': drug_name.title(),
-            'food': food_name.title(),
-            'prediction': 'INTERACTION' if result['interaction_predicted'] else 'NO INTERACTION',
-            'confidence': f"{result['probability']:.3f}",
-            'drug_category': result['drug_category'],
-            'food_category': result['food_category'],
-            'mechanism': result['mechanism'],
-            'risk_level': result['risk_level']
+        bootstrap_predictions = []
+        bootstrap_probabilities = []
+        
+        for _ in range(n_bootstrap):
+            bootstrap_indices = np.random.choice(len(self.X_train), size=len(self.X_train), replace=True)
+            X_bootstrap = self.X_train.iloc[bootstrap_indices]
+            y_bootstrap = self.y_test.iloc[bootstrap_indices] if len(self.y_test) > max(bootstrap_indices) else [0] * len(bootstrap_indices)
+            
+            try:
+                bootstrap_model = self.model.__class__(**self.model.get_params())
+                bootstrap_model.fit(X_bootstrap, y_bootstrap)
+                
+                pred = bootstrap_model.predict(instance)[0]
+                prob = bootstrap_model.predict_proba(instance)[0, 1] if hasattr(bootstrap_model, 'predict_proba') else pred
+                
+                bootstrap_predictions.append(pred)
+                bootstrap_probabilities.append(prob)
+            except:
+                continue
+        
+        if len(bootstrap_probabilities) > 0:
+            uncertainty_metrics = {
+                'context': {'drug': drug_name, 'food': food_name} if drug_name and food_name else None,
+                'mean_probability': float(np.mean(bootstrap_probabilities)),
+                'std_probability': float(np.std(bootstrap_probabilities)),
+                'confidence_interval_95': [
+                    float(np.percentile(bootstrap_probabilities, 2.5)),
+                    float(np.percentile(bootstrap_probabilities, 97.5))
+                ],
+                'prediction_stability': float(np.mean(bootstrap_predictions)),
+                'uncertainty_level': 'HIGH' if np.std(bootstrap_probabilities) > 0.2 else 'MEDIUM' if np.std(bootstrap_probabilities) > 0.1 else 'LOW'
+            }
+            
+            return uncertainty_metrics
+        
+        return {'error': 'Unable to quantify uncertainty'}
+
+    def calibration_analysis(self):
+        """Analyze model calibration"""
+        if len(self.X_test) < 50:
+            return {'error': 'Insufficient data for calibration analysis'}
+        
+        y_prob = self.model.predict_proba(self.X_test)[:, 1]
+        y_true = self.y_test
+        
+        n_bins = 10
+        bin_boundaries = np.linspace(0, 1, n_bins + 1)
+        bin_lowers = bin_boundaries[:-1]
+        bin_uppers = bin_boundaries[1:]
+        
+        calibration_data = []
+        for bin_lower, bin_upper in zip(bin_lowers, bin_uppers):
+            in_bin = (y_prob > bin_lower) & (y_prob <= bin_upper)
+            prop_in_bin = in_bin.mean()
+            
+            if prop_in_bin > 0:
+                accuracy_in_bin = y_true[in_bin].mean()
+                avg_confidence_in_bin = y_prob[in_bin].mean()
+                
+                calibration_data.append({
+                    'bin_lower': float(bin_lower),
+                    'bin_upper': float(bin_upper),
+                    'accuracy': float(accuracy_in_bin),
+                    'confidence': float(avg_confidence_in_bin),
+                    'count': int(in_bin.sum())
+                })
+        
+        return {
+            'calibration_curve': calibration_data,
+            'expected_calibration_error': float(np.mean([abs(d['accuracy'] - d['confidence']) for d in calibration_data if d['count'] > 0]))
+        }
+    
+    def get_feature_impact_summary(self):
+        """Get condensed feature impact for dashboard"""
+        importance_df = self.global_feature_importance()
+        if isinstance(importance_df, pd.DataFrame):
+            return {
+                'top_features': importance_df.head(3).to_dict('records'),
+                'feature_categories': {
+                    'drug_features': len([f for f in importance_df['Feature'] if 'drug_' in f]),
+                    'food_features': len([f for f in importance_df['Feature'] if 'food_' in f]),
+                    'interaction_features': len([f for f in importance_df['Feature'] if any(x in f for x in ['risk_', 'mechanism_'])])
+                }
+            }
+        return None
+    
+    def explain_interaction_mechanism(self, drug_category, food_category):
+        """Provide detailed mechanism explanation"""
+        mechanism, risk = get_interaction_details(drug_category, food_category)
+        
+        mechanism_details = {
+            'cyp3a4_inhibition': {
+                'description': 'Food blocks liver enzymes that metabolize the drug',
+                'clinical_impact': 'Increased drug levels, potential toxicity',
+                'timing': 'Avoid food 2-4 hours before/after medication'
+            },
+            'vitamin_k_competition': {
+                'description': 'Food contains vitamin K which opposes anticoagulant effects',
+                'clinical_impact': 'Reduced blood-thinning effectiveness',
+                'timing': 'Maintain consistent dietary vitamin K intake'
+            },
+            'calcium_chelation': {
+                'description': 'Calcium binds to drug, preventing absorption',
+                'clinical_impact': 'Reduced drug effectiveness',
+                'timing': 'Take medication 1-2 hours before dairy products'
+            },
+            'none': {
+                'description': 'No significant interaction identified',
+                'clinical_impact': 'Minimal to no effect expected',
+                'timing': 'No special precautions needed'
+            }
         }
         
-        return output
+        return mechanism_details.get(mechanism, {
+            'description': 'Mechanism not fully characterized',
+            'clinical_impact': 'Unknown interaction pathway',
+            'timing': 'Consult healthcare provider'
+        })
+    
+    def generate_clinical_decision_support(self, drug_name, food_name, patient_context=None):
+        """Generate patient-friendly clinical decision support"""
+        prediction = self.decision_pathway_analysis(drug_name, food_name)
+        
+        if 'error' in prediction:
+            return prediction
+        
+        risk_explanations = {
+            'HIGH': {
+                'message': '🚨 AVOID COMBINATION - High risk of serious interaction',
+                'action': 'Consult your doctor immediately before combining',
+                'timeline': 'Do not consume together'
+            },
+            'MODERATE': {
+                'message': '⚠️ CAUTION REQUIRED - Monitor for side effects',
+                'action': 'Space timing by 2-4 hours, monitor symptoms',
+                'timeline': 'Take medication 2 hours before/after food'
+            },
+            'LOW': {
+                'message': '✅ GENERALLY SAFE - Minimal interaction risk',
+                'action': 'Safe to consume together with normal precautions',
+                'timeline': 'No special timing required'
+            }
+        }
+        
+        risk_info = risk_explanations.get(prediction['risk_level'], risk_explanations['LOW'])
+        
+        mechanism_simple = {
+            'cyp3a4_inhibition': 'This food can make your medication stronger by blocking how your body breaks it down',
+            'vitamin_k_competition': 'This food contains nutrients that can make blood-thinning medication less effective',
+            'calcium_chelation': 'Calcium in this food can bind to your medication and reduce how much your body absorbs',
+            'absorption_interference': 'This food can slow down how well your body absorbs the medication',
+            'none': 'No significant interaction expected',
+            'unknown': 'The interaction pathway is not fully understood'
+        }
+        
+        clinical_support = {
+            'patient_summary': {
+                'drug': drug_name.title(),
+                'food': food_name.title(),
+                'risk_level': prediction['risk_level'],
+                'simple_explanation': mechanism_simple.get(prediction['mechanism'], 'Unknown interaction'),
+                'recommendation': risk_info
+            },
+            'professional_details': {
+                'mechanism': prediction['mechanism'],
+                'drug_category': prediction['drug_category'],
+                'food_category': prediction['food_category'],
+                'confidence': prediction['confidence']
+            },
+            'monitoring_advice': self.get_monitoring_advice(prediction['risk_level'], prediction['mechanism']),
+            'alternative_suggestions': self.suggest_alternatives(drug_name, food_name)
+        }
+        
+        return clinical_support
 
-# Initialize XAI system only once
-if len(results_df) > 0:
-    print(f"🔧 Initializing XAI system with {results_df.iloc[0]['model']}...")
-    xai_system = DrugFoodXAI(
-        model=models[results_df.iloc[0]['model']],
-        X_train=X_train,
-        X_test=X_test,
-        y_test=y_test,
-        feature_names=feature_info['feature_names']
-    )
-    xai_system.initialize_explainers()
-    print("✅ XAI system ready")
-else:
-    print("❌ No models available for XAI")
-    xai_system = None
+    def get_monitoring_advice(self, risk_level, mechanism):
+        """Provide specific monitoring advice"""
+        monitoring_map = {
+            'HIGH': {
+                'cyp3a4_inhibition': 'Monitor for signs of drug toxicity: unusual fatigue, muscle pain, digestive issues',
+                'vitamin_k_competition': 'Monitor INR levels more frequently, watch for unusual bleeding/bruising',
+                'default': 'Monitor for any unusual symptoms and contact healthcare provider'
+            },
+            'MODERATE': {
+                'calcium_chelation': 'Monitor effectiveness of medication, may need dosage adjustment',
+                'absorption_interference': 'Take medication on empty stomach or 2 hours before meals',
+                'default': 'Monitor for reduced medication effectiveness'
+            },
+            'LOW': {
+                'default': 'No special monitoring required, standard precautions apply'
+            }
+        }
+        
+        return monitoring_map.get(risk_level, {}).get(mechanism, monitoring_map.get(risk_level, {}).get('default', 'Consult healthcare provider'))
+
+    def suggest_alternatives(self, drug_name, food_name):
+        """Suggest safer alternatives"""
+        alternatives = {
+            'warfarin': {'foods_to_avoid': ['spinach', 'kale', 'broccoli'], 'safer_options': ['carrots', 'potatoes', 'rice']},
+            'simvastatin': {'foods_to_avoid': ['grapefruit', 'pomelo'], 'safer_options': ['orange', 'apple', 'banana']},
+            'tetracycline': {'foods_to_avoid': ['milk', 'cheese', 'yogurt'], 'safer_options': ['water', 'juice', 'non-dairy alternatives']},
+            'metformin': {'foods_to_avoid': [], 'safer_options': ['banana', 'apple', 'rice']},
+            'ibuprofen': {'foods_to_avoid': [], 'safer_options': ['coffee', 'tea', 'water']}
+        }
+        
+        return alternatives.get(drug_name.lower(), {'message': 'Consult pharmacist for specific alternatives'})
+    
+    def decision_pathway_analysis(self, drug_name, food_name):
+        """Trace decision pathway"""
+        new_df = pd.DataFrame({
+            'drug': [drug_name.lower().strip()],
+            'food': [food_name.lower().strip()],
+            'interaction': [0]
+        })
+        
+        new_df['drug_category'] = new_df['drug'].apply(lambda x: categorize_entity(x, drug_categories))
+        new_df['food_category'] = new_df['food'].apply(lambda x: categorize_entity(x, food_categories))
+        new_df[['mechanism', 'risk_level']] = new_df.apply(
+            lambda x: pd.Series(get_interaction_details(x['drug_category'], x['food_category'])), 
+            axis=1
+        )
+        
+        try:
+            X_new, _ = create_enhanced_features(new_df)
+            missing_cols = set(feature_info['feature_names']) - set(X_new.columns)
+            for col in missing_cols:
+                X_new[col] = 0
+            X_new = X_new[feature_info['feature_names']]
+            
+            probability = self.model.predict_proba(X_new)[0, 1]
+            prediction = probability > 0.7  # Threshold for interaction
+            
+            return {
+                'drug': drug_name.title(),
+                'food': food_name.title(),
+                'prediction': 'INTERACTION' if prediction else 'NO INTERACTION',
+                'confidence': f"{probability:.3f}",
+                'drug_category': new_df['drug_category'].iloc[0],
+                'food_category': new_df['food_category'].iloc[0],
+                'mechanism': new_df['mechanism'].iloc[0],
+                'risk_level': new_df['risk_level'].iloc[0]
+            }
+        except Exception as e:
+            return {'error': str(e)}
+    
+    def counterfactual_analysis(self, drug_name, food_name, change_categories=True):
+        """Generate 'what-if' scenarios with detailed alternatives"""
+        base_prediction = self.decision_pathway_analysis(drug_name, food_name)
+        
+        if 'error' in base_prediction:
+            return base_prediction
+        
+        counterfactuals = []
+        
+        if change_categories:
+            for alt_drug_cat in drug_categories.keys():
+                if alt_drug_cat != base_prediction['drug_category']:
+                    alt_mechanism, alt_risk = get_interaction_details(alt_drug_cat, base_prediction['food_category'])
+                    counterfactuals.append({
+                        'scenario': f'Using a {alt_drug_cat} medication instead',
+                        'original_risk': base_prediction['risk_level'],
+                        'counterfactual_risk': alt_risk,
+                        'risk_change': 'INCREASED' if alt_risk == 'HIGH' and base_prediction['risk_level'] != 'HIGH' else 'DECREASED' if alt_risk == 'LOW' and base_prediction['risk_level'] != 'LOW' else 'SAME',
+                        'mechanism_change': alt_mechanism
+                    })
+            
+            for alt_food_cat in food_categories.keys():
+                if alt_food_cat != base_prediction['food_category']:
+                    alt_mechanism, alt_risk = get_interaction_details(base_prediction['drug_category'], alt_food_cat)
+                    counterfactuals.append({
+                        'scenario': f'Consuming a {alt_food_cat} food instead',
+                        'original_risk': base_prediction['risk_level'],
+                        'counterfactual_risk': alt_risk,
+                        'risk_change': 'INCREASED' if alt_risk == 'HIGH' and base_prediction['risk_level'] != 'HIGH' else 'DECREASED' if alt_risk == 'LOW' and base_prediction['risk_level'] != 'LOW' else 'SAME',
+                        'mechanism_change': alt_mechanism
+                    })
+        
+        counterfactuals.sort(key=lambda x: {'INCREASED': 2, 'SAME': 1, 'DECREASED': 0}[x['risk_change']], reverse=True)
+        
+        return {
+            'base_scenario': base_prediction,
+            'counterfactuals': counterfactuals[:5],  # Top 5 most relevant
+            'summary': {
+                'safer_alternatives': [c for c in counterfactuals[:5] if c['risk_change'] == 'DECREASED'],
+                'riskier_alternatives': [c for c in counterfactuals[:5] if c['risk_change'] == 'INCREASED'],
+                'similar_risk': [c for c in counterfactuals[:5] if c['risk_change'] == 'SAME']
+            }
+        }
+
+    def feature_counterfactuals(self, instance_idx, target_class=None):
+        """Generate feature-level counterfactuals with clinical focus"""
+        if not self.shap_explainer:
+            return {'error': 'SHAP explainer required'}
+        
+        instance = self.X_test.iloc[instance_idx:instance_idx+1]
+        current_pred = self.model.predict(instance)[0]
+        target_class = 1 - current_pred if target_class is None else target_class
+        
+        try:
+            shap_values = self.shap_explainer.shap_values(instance)
+            if isinstance(shap_values, list):
+                shap_values = shap_values[1]
+            
+            clinical_indices = [i for i, f in enumerate(self.feature_names) if f in self.clinical_features]
+            feature_impacts = pd.DataFrame({
+                'feature': [self.feature_names[i] for i in clinical_indices],
+                'impact': shap_values[0][clinical_indices],
+                'current_value': instance.iloc[0].values[clinical_indices]
+            })
+            
+            if target_class != current_pred:
+                features_to_change = feature_impacts.nlargest(3, 'impact') if current_pred == 1 else feature_impacts.nsmallest(3, 'impact')
+                
+                counterfactual_suggestions = []
+                for _, row in features_to_change.iterrows():
+                    suggestion = {
+                        'feature': row['feature'],
+                        'current_value': float(row['current_value']),
+                        'suggested_direction': 'decrease' if row['impact'] > 0 else 'increase',
+                        'impact_magnitude': float(abs(row['impact']))
+                    }
+                    counterfactual_suggestions.append(suggestion)
+                
+                return {
+                    'current_prediction': 'INTERACTION' if current_pred else 'NO INTERACTION',
+                    'target_prediction': 'INTERACTION' if target_class else 'NO INTERACTION',
+                    'suggested_changes': counterfactual_suggestions,
+                    'feasibility': 'Some changes may require clinical consultation'
+                }
+        
+        except Exception as e:
+            return {'error': f'Counterfactual analysis failed: {str(e)}'}
+
+# Initialize XAI system with XGBoost
+print("\n🔧 Initializing XAI system...")
+xai_system = DrugFoodXAI(
+    model=models[results_df.iloc[0]['model']],
+    X_train=X_train,
+    X_test=X_test,
+    y_test=y_test,
+    feature_names=feature_info['feature_names']
+)
+xai_system.initialize_explainers()
+print("✅ XAI system ready")
 
 def safe_xai_analysis(instance_idx=0):
     """Safely run XAI analysis without infinite loops"""
@@ -853,6 +1394,100 @@ def safe_xai_analysis(instance_idx=0):
     except Exception as e:
         print(f"❌ XAI analysis failed: {e}")
         return None
+
+def get_xai_dashboard_data():
+    """Get all XAI data needed for frontend dashboard"""
+    if xai_system is None:
+        return {'error': 'XAI system not available'}
+    
+    try:
+        return {
+            'model_info': {
+                'best_model': results_df.iloc[0]['model'],
+                'performance': results_df.iloc[0].to_dict(),
+                'total_features': len(feature_info['feature_names'])
+            },
+            'feature_importance': xai_system.get_feature_impact_summary(),
+            'sample_explanations': xai_system.batch_explain_predictions(list(range(min(5, len(X_test))))),
+            'interaction_stats': {
+                'high_risk_count': len(df_final[df_final['risk_level'] == 'HIGH']),
+                'moderate_risk_count': len(df_final[df_final['risk_level'] == 'MODERATE']),
+                'low_risk_count': len(df_final[df_final['risk_level'] == 'LOW'])
+            }
+        }
+    except Exception as e:
+        return {'error': f'XAI dashboard generation failed: {str(e)}'}
+
+def create_comprehensive_xai_visualizations(xai_system, save_plots=True):
+    """Create comprehensive XAI visualizations"""
+    if not xai_system or not xai_system.shap_explainer:
+        print("❌ XAI system not available for visualizations")
+        return
+    
+    # 1. Summary plot
+    try:
+        test_sample = xai_system.X_test.sample(min(100, len(xai_system.X_test)), random_state=42)
+        shap_values = xai_system.shap_explainer.shap_values(test_sample)
+        if isinstance(shap_values, list):
+            shap_values = shap_values[1]
+        
+        plt.figure(figsize=(12, 8))
+        shap.summary_plot(shap_values, test_sample, feature_names=xai_system.feature_names, show=False)
+        if save_plots:
+            plt.savefig('shap_summary_plot.png', dpi=300, bbox_inches='tight')
+        plt.show()
+        
+        # 2. Feature importance bar plot
+        feature_importance = pd.DataFrame({
+            'feature': xai_system.feature_names,
+            'importance': np.abs(shap_values).mean(0)
+        }).sort_values('importance', ascending=True).tail(15)
+        
+        plt.figure(figsize=(10, 8))
+        plt.barh(feature_importance['feature'], feature_importance['importance'])
+        plt.xlabel('Mean |SHAP Value|')
+        plt.title('Top 15 Feature Importance (SHAP)')
+        plt.tight_layout()
+        if save_plots:
+            plt.savefig('feature_importance_shap.png', dpi=300, bbox_inches='tight')
+        plt.show()
+        
+        # 3. Dependence plots for top features
+        top_features = feature_importance.tail(3)['feature'].tolist()
+        for feature in top_features:
+            plt.figure(figsize=(10, 6))
+            shap.dependence_plot(feature, shap_values, test_sample, 
+                               feature_names=xai_system.feature_names, show=False)
+            if save_plots:
+                plt.savefig(f'dependence_plot_{feature}.png', dpi=300, bbox_inches='tight')
+            plt.show()
+        
+        print("✅ Comprehensive XAI visualizations created")
+        
+    except Exception as e:
+        print(f"❌ Visualization creation failed: {str(e)}")
+
+def explain_prediction_for_frontend(drug_name, food_name):
+    """Complete explanation package for frontend display"""
+    prediction = predict_new_interaction(drug_name, food_name)
+    
+    if 'error' in prediction:
+        return prediction
+    
+    mechanism_details = xai_system.explain_interaction_mechanism(
+        prediction['drug_category'], 
+        prediction['food_category']
+    ) if xai_system else {}
+    
+    similar = find_similar_interactions(drug_name, food_name, top_n=3)
+    
+    return {
+        **prediction,
+        'mechanism_details': mechanism_details,
+        'similar_interactions': similar,
+        'confidence_level': 'High' if prediction['probability'] > 0.7 else 'Medium' if prediction['probability'] > 0.4 else 'Low',
+        'clinical_significance': 'Critical' if prediction['risk_level'] == 'HIGH' else 'Important' if prediction['risk_level'] == 'MODERATE' else 'Monitor'
+    }
 
 def conduct_case_studies():
     case_studies = [
@@ -882,19 +1517,41 @@ def find_similar_interactions(target_drug, target_food, top_n=5):
     
     return similar[['drug', 'food', 'interaction', 'risk_level']].to_dict('records')
 
+def batch_predict_interactions(drug_list, food_list, max_combinations=100):
+    """Efficiently predict multiple drug-food combinations for frontend"""
+    results = []
+    combinations = [(d, f) for d in drug_list for f in food_list]
+    
+    combinations = combinations[:max_combinations]
+    
+    for drug, food in combinations:
+        result = predict_new_interaction(drug, food)
+        if 'error' not in result:
+            results.append({
+                'drug': drug,
+                'food': food,
+                'interaction': result['interaction_predicted'],
+                'probability': result['probability'],
+                'risk_level': result['risk_level']
+            })
+    
+    return {
+        'total_combinations': len(combinations),
+        'interactions_found': len([r for r in results if r['interaction']]),
+        'results': results
+    }
+
 def predict_new_interaction_with_explanation(drug_name, food_name, explain=True):
     result = predict_new_interaction(drug_name, food_name)
     
     if explain and 'error' not in result and xai_system is not None:
         try:
-            # Remove the pathway call that causes infinite loop
             result['explanation'] = {
                 'key_factors': f"Categories: {result['drug_category']} + {result['food_category']}",
                 'confidence_level': 'High' if result['probability'] > 0.7 else 'Medium' if result['probability'] > 0.4 else 'Low',
                 'mechanism': result['mechanism'],
                 'risk_assessment': result['risk_level']
             }
-            
         except Exception as e:
             result['explanation'] = f"Explanation failed: {e}"
     
@@ -924,14 +1581,8 @@ def predict_new_interaction(drug_name, food_name, model=None, return_risk=True):
             X_new[col] = 0
         X_new = X_new[feature_info['feature_names']]
         
-        if model.__class__.__name__ == 'MLPClassifier':
-            X_new = scaler.transform(X_new)
-        
         prediction = model.predict(X_new)[0]
-        try:
-            probability = model.predict_proba(X_new)[0, 1]
-        except:
-            probability = prediction
+        probability = model.predict_proba(X_new)[0, 1]
         
         result = {
             'drug': drug_name,
@@ -1019,7 +1670,7 @@ test_pairs = [
 ]
 
 for drug, food in test_pairs:
-    result = predict_new_interaction(drug, food)  # Use simple version to avoid loops
+    result = predict_new_interaction(drug, food)
     if 'error' not in result:
         print(f"\n{drug.title()} + {food.title()}:")
         print(f"  Interaction: {'YES' if result['interaction_predicted'] else 'NO'}")
@@ -1038,13 +1689,11 @@ def test_xai_simple():
     print("-" * 30)
     
     if xai_system is not None:
-        # Test global importance
         importance = xai_system.global_feature_importance()
         if importance is not None and isinstance(importance, pd.DataFrame):
             print("Top 5 Important Features:")
             print(importance.head(5))
         
-        # Test single prediction explanation
         if len(X_test) > 0:
             sample_explanation = safe_xai_analysis(0)
             if sample_explanation:
@@ -1053,6 +1702,39 @@ def test_xai_simple():
         print("❌ XAI system not available")
 
 test_xai_simple()
+
+# Enhanced XAI Analysis
+print("\n🔍 ENHANCED XAI ANALYSIS")
+print("=" * 60)
+
+# Test waterfall plots
+sample_waterfall = xai_system.create_shap_waterfall(0)
+if sample_waterfall and hasattr(sample_waterfall, 'show'):
+    plt.show()
+
+# Test uncertainty quantification
+uncertainty_result = xai_system.quantify_prediction_uncertainty(0, n_bootstrap=20)
+print("Uncertainty Analysis:", uncertainty_result)
+
+# Test counterfactual analysis
+counterfactual_result = xai_system.counterfactual_analysis('warfarin', 'spinach')
+print("Counterfactual Analysis:")
+print(f"  Base risk: {counterfactual_result['base_scenario']['risk_level']}")
+print(f"  Safer alternatives: {counterfactual_result['summary']['safer_alternatives']}")
+
+# Test clinical decision support
+clinical_support = xai_system.generate_clinical_decision_support('warfarin', 'spinach')
+print("Clinical Decision Support:")
+print(f"  Risk Level: {clinical_support['patient_summary']['risk_level']}")
+print(f"  Recommendation: {clinical_support['patient_summary']['recommendation']['message']}")
+
+# Create comprehensive visualizations
+create_comprehensive_xai_visualizations(xai_system, save_plots=True)
+
+# Test interactive dashboard data
+dashboard_data = xai_system.create_interactive_dashboard_data()
+print("Dashboard Data Generated:", 'error' not in dashboard_data)
+
 
 print("\n✅ ANALYSIS COMPLETE!")
 print("=" * 80)
@@ -1067,19 +1749,27 @@ print("   • Models used: LightGBM, MLP, Voting, Extra Trees, CatBoost,")
 print("                  Random Forest, XGBoost, Gradient Boosting")
 print("   • Risk categorization system operational (HIGH/MODERATE/LOW)")
 
-model_package = {
-    'model': models[results_df.iloc[0]['model']],
-    'feature_info': feature_info,
-    'scaler': scaler,
-    'drug_categories': drug_categories,
-    'food_categories': food_categories,
-    'high_risk_interactions': high_risk_interactions,
-    'model_performance': results_df.iloc[0].to_dict(),
-    'training_date': datetime.now().isoformat(),
-    'model_version': '2.0_XAI',
-    'xai_system': xai_system,
-    'xai_capabilities': ['SHAP', 'LIME', 'Decision_Pathways', 'Case_Studies']
-}
+def create_serializable_model_package():
+    """Create a model package that can be properly serialized"""
+    serializable_package = {
+        'model': models[results_df.iloc[0]['model']],
+        'feature_info': {
+            'feature_names': feature_info['feature_names'],
+            # Remove the TfidfVectorizer and SVD objects - recreate them when loading
+        },
+        'scaler': scaler,
+        'drug_categories': drug_categories,
+        'food_categories': food_categories,
+        'high_risk_interactions': high_risk_interactions,
+        'model_performance': results_df.iloc[0].to_dict(),
+        'training_date': datetime.now().isoformat(),
+        'model_version': '2.0_XAI'
+        # Don't include xai_system in serialization
+    }
+    return serializable_package
+
+# Use this instead of direct pickle
+model_package = create_serializable_model_package()
 
 try:
     with open('best_drug_food_interaction_model.pkl', 'wb') as f:

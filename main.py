@@ -895,12 +895,6 @@ def predict_new_interaction_with_explanation(drug_name, food_name, explain=True)
                 'risk_assessment': result['risk_level']
             }
             
-            result['explanation'] = {
-                'decision_pathway': pathway,
-                'key_factors': f"Categories: {result['drug_category']} + {result['food_category']}",
-                'confidence_level': 'High' if result['probability'] > 0.7 else 'Medium' if result['probability'] > 0.4 else 'Low'
-            }
-            
         except Exception as e:
             result['explanation'] = f"Explanation failed: {e}"
     

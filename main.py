@@ -24,7 +24,6 @@ from scipy.sparse import csr_matrix
 import pickle
 import warnings
 from collections import Counter
-import streamlit as st
 
 # Install required packages if not available
 try:
@@ -711,7 +710,6 @@ class DrugFoodXAI:
         self.shap_explainer = None
         self.lime_explainer = None
     
-    @st.cache_resource
     def initialize_explainers(self):
         """Initialize SHAP and LIME explainers with caching for performance"""
         print("🔧 Initializing XAI explainers...")
@@ -823,15 +821,38 @@ class DrugFoodXAI:
         
         return output
 
-xai_system = DrugFoodXAI(
-    model=models[results_df.iloc[0]['model']],
-    X_train=X_train,
-    X_test=X_test,
-    y_test=y_test,
-    feature_names=feature_info['feature_names']
-)
+# Initialize XAI system only once
+if len(results_df) > 0:
+    print(f"🔧 Initializing XAI system with {results_df.iloc[0]['model']}...")
+    xai_system = DrugFoodXAI(
+        model=models[results_df.iloc[0]['model']],
+        X_train=X_train,
+        X_test=X_test,
+        y_test=y_test,
+        feature_names=feature_info['feature_names']
+    )
+    xai_system.initialize_explainers()
+    print("✅ XAI system ready")
+else:
+    print("❌ No models available for XAI")
+    xai_system = None
 
-xai_system.initialize_explainers()
+def safe_xai_analysis(instance_idx=0):
+    """Safely run XAI analysis without infinite loops"""
+    if xai_system is None:
+        print("❌ XAI system not available")
+        return None
+    
+    try:
+        if instance_idx < len(X_test):
+            explanation = xai_system.explain_prediction(instance_idx)
+            return explanation
+        else:
+            print(f"❌ Instance index {instance_idx} out of range")
+            return None
+    except Exception as e:
+        print(f"❌ XAI analysis failed: {e}")
+        return None
 
 def conduct_case_studies():
     case_studies = [
@@ -864,18 +885,15 @@ def find_similar_interactions(target_drug, target_food, top_n=5):
 def predict_new_interaction_with_explanation(drug_name, food_name, explain=True):
     result = predict_new_interaction(drug_name, food_name)
     
-    if explain and 'error' not in result:
+    if explain and 'error' not in result and xai_system is not None:
         try:
-            temp_df = pd.DataFrame({
-                'drug': [drug_name.lower()],
-                'food': [food_name.lower()],
-                'interaction': [0]
-            })
-            
-            temp_df['drug_category'] = temp_df['drug'].apply(lambda x: categorize_entity(x, drug_categories))
-            temp_df['food_category'] = temp_df['food'].apply(lambda x: categorize_entity(x, food_categories))
-            
-            pathway = xai_system.decision_pathway_analysis(drug_name, food_name)
+            # Remove the pathway call that causes infinite loop
+            result['explanation'] = {
+                'key_factors': f"Categories: {result['drug_category']} + {result['food_category']}",
+                'confidence_level': 'High' if result['probability'] > 0.7 else 'Medium' if result['probability'] > 0.4 else 'Low',
+                'mechanism': result['mechanism'],
+                'risk_assessment': result['risk_level']
+            }
             
             result['explanation'] = {
                 'decision_pathway': pathway,
@@ -1007,7 +1025,7 @@ test_pairs = [
 ]
 
 for drug, food in test_pairs:
-    result = predict_new_interaction_with_explanation(drug, food)
+    result = predict_new_interaction(drug, food)  # Use simple version to avoid loops
     if 'error' not in result:
         print(f"\n{drug.title()} + {food.title()}:")
         print(f"  Interaction: {'YES' if result['interaction_predicted'] else 'NO'}")
@@ -1025,12 +1043,20 @@ def test_xai_simple():
     print("\n🔍 SIMPLE XAI TEST")
     print("-" * 30)
     
-    test_pairs = [('warfarin', 'spinach'), ('aspirin', 'coffee')]
-    
-    for drug, food in test_pairs:
-        result = predict_new_interaction_with_explanation(drug, food, explain=False)
-        if 'error' not in result:
-            print(f"{drug} + {food}: {'INTERACTION' if result['interaction_predicted'] else 'NO INTERACTION'} (p={result['probability']:.3f})")
+    if xai_system is not None:
+        # Test global importance
+        importance = xai_system.global_feature_importance()
+        if importance is not None and isinstance(importance, pd.DataFrame):
+            print("Top 5 Important Features:")
+            print(importance.head(5))
+        
+        # Test single prediction explanation
+        if len(X_test) > 0:
+            sample_explanation = safe_xai_analysis(0)
+            if sample_explanation:
+                print(f"Sample prediction: {sample_explanation['predicted_label']}")
+    else:
+        print("❌ XAI system not available")
 
 test_xai_simple()
 

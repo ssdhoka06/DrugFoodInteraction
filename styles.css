@@ -754,52 +754,6 @@ a:hover {
     background: rgba(67, 97, 238, 0.1);
 }
 
-.btn-chat-control {
-    background: transparent;
-    color: white;
-    border: none;
-    width: 32px;
-    height: 32px;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    transition: background var(--transition-fast);
-}
-
-.btn-chat-control:hover {
-    background: rgba(255, 255, 255, 0.2);
-}
-
-
-.message-bot {
-    margin-bottom: 1rem;
-    max-width: 80%;
-}
-
-.message-content {
-    background: white;
-    padding: 1rem;
-    border-radius: 0 var(--border-radius-lg) var(--border-radius-lg) var(--border-radius-lg);
-    box-shadow: var(--shadow-sm);
-}
-
-.welcome-message .message-content {
-    background: var(--primary-color);
-    color: white;
-}
-
-.welcome-message ul {
-    margin-top: 0.5rem;
-    padding-left: 1.5rem;
-}
-
-.welcome-message li {
-    margin-bottom: 0.25rem;
-    font-size: 0.875rem;
-}
-
 /* How It Works Section */
 .how-it-works {
     padding: 4rem 0;

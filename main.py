@@ -8,7 +8,7 @@ XAI_CONFIG = {
     'enable_local_explanations': True,
     'cache_explanations': True  # Cache explanations for repeated requests
 }
-import json
+import os
 import sys
 from datetime import datetime
 import pandas as pd
@@ -60,6 +60,29 @@ except ImportError:
     print("⚠️ XGBoost not available. Skipping XGBoost model.")
     XGBOOST_AVAILABLE = False
 
+# Install gdown for Google Drive downloads
+try:
+    import gdown
+except ImportError:
+    print("Installing gdown...")
+    import subprocess
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "gdown"])
+    import gdown
+
+# Google Drive file ID and URL
+file_id = "1IhAkCHqs2FUDX9rzkZT12ov1xFweKEda"
+download_url = f"https://drive.google.com/uc?export=download&id={file_id}"
+data_file = "balanced_drug_food_interactions.csv"
+
+# Download the file from Google Drive if not already present
+if not os.path.exists(data_file):
+    print(f"Downloading data from Google Drive (file ID: {file_id})...")
+    try:
+        gdown.download(download_url, data_file, quiet=False)
+        print("✅ Data downloaded successfully")
+    except Exception as e:
+        print(f"⚠️ Download failed: {e}. Will try to load from local or create sample data.")
+
 # XAI Libraries
 try:
     import shap
@@ -95,9 +118,9 @@ print("=" * 80)
 print("\n📋 PHASE 1: ENHANCED DATA PREPROCESSING")
 print("-" * 40)
 
-def load_and_clean_foodrugs(filepath='/Users/sachidhoka/Desktop/food-drug interactions.csv'):
+def load_and_clean_foodrugs(filepath='/Users/sachidhoka/Desktop/food-drug interactions.csv'):  # Use the downloaded file by default
     """Load and clean FooDrugs dataset with enhanced preprocessing"""
-    print("Loading FooDrugs dataset...")
+    print(f"Loading FooDrugs dataset from {filepath}...")
     
     try:
         for encoding in ['utf-8', 'latin-1', 'cp1252']:
@@ -158,6 +181,8 @@ def load_and_clean_foodrugs(filepath='/Users/sachidhoka/Desktop/food-drug intera
     return df_clean
 
 df_clean = load_and_clean_foodrugs()
+
+
 
 drug_categories = {
     'anticoagulant': ['warfarin', 'heparin', 'coumadin', 'dabigatran', 'rivaroxaban', 'apixaban'],

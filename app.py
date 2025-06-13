@@ -22,7 +22,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__, static_folder='static', template_folder='templates')
-CORS(app)  # Enable CORS for all routes
+CORS(app, origins=["http://localhost:5001", "http://127.0.0.1:5001", "*"])
 app.secret_key = os.environ.get('SECRET_KEY', os.urandom(24))
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=1)
@@ -566,27 +566,82 @@ def predict_interaction():
 
 @app.route('/api/drugs')
 def get_drugs():
-    query = request.args.get('q', '').lower()
+    query = request.args.get('q', '').lower().strip()
     limit = int(request.args.get('limit', 20))
     
-    if query:
-        matching_drugs = [drug for drug in all_drugs if query in drug.lower()][:limit]
-    else:
-        matching_drugs = all_drugs[:limit]
-    
-    return jsonify({'drugs': matching_drugs})
+    try:
+        if query:
+            # Filter drugs that contain the query
+            matching_drugs = [drug for drug in all_drugs if query in drug.lower()][:limit]
+        else:
+            # Return first N drugs if no query
+            matching_drugs = all_drugs[:limit]
+        
+        # Ensure we have data to return
+        if not matching_drugs and len(all_drugs) > 0:
+            matching_drugs = all_drugs[:5]  # Return at least some drugs
+        
+        return jsonify({
+            'success': True,
+            'drugs': matching_drugs,
+            'total': len(matching_drugs)
+        })
+    except Exception as e:
+        logger.error(f"Error in get_drugs: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'drugs': []
+        }), 500
 
 @app.route('/api/foods')
 def get_foods():
-    query = request.args.get('q', '').lower()
+    query = request.args.get('q', '').lower().strip()
     limit = int(request.args.get('limit', 20))
     
-    if query:
-        matching_foods = [food for food in all_foods if query in food.lower()][:limit]
-    else:
-        matching_foods = all_foods[:limit]
+    try:
+        if query:
+            # Filter foods that contain the query
+            matching_foods = [food for food in all_foods if query in food.lower()][:limit]
+        else:
+            # Return first N foods if no query
+            matching_foods = all_foods[:limit]
+        
+        # Ensure we have data to return
+        if not matching_foods and len(all_foods) > 0:
+            matching_foods = all_foods[:5]  # Return at least some foods
+        
+        return jsonify({
+            'success': True,
+            'foods': matching_foods,
+            'total': len(matching_foods)
+        })
+    except Exception as e:
+        logger.error(f"Error in get_foods: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'foods': []
+        }), 500
     
-    return jsonify({'foods': matching_foods})
+@app.route('/api/debug')
+def debug_data():
+    return jsonify({
+        'data_loaded': df is not None,
+        'model_loaded': best_model is not None,
+        'drugs_count': len(all_drugs),
+        'foods_count': len(all_foods),
+        'sample_drugs': all_drugs[:5] if all_drugs else [],
+        'sample_foods': all_foods[:5] if all_foods else [],
+        'drug_categories': list(drug_categories.keys())[:5] if drug_categories else [],
+        'food_categories': list(food_categories.keys())[:5] if food_categories else []
+    })
+
+@app.errorhandler(404)
+def not_found(error):
+    if request.path.startswith('/api/'):
+        return jsonify({'success': False, 'error': 'API endpoint not found'}), 404
+    return render_template('index.html')
 
 @app.route('/api/test')
 def test():

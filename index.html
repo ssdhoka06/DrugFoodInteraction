@@ -432,6 +432,16 @@
     <!-- Scripts -->
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+    <!-- Add this right before your script.js include -->
+    <script>
+        // Make the data available to your JavaScript
+        window.appData = {
+        drugs: {{ all_drugs|tojson }},
+        foods: {{ all_foods|tojson }},
+        drugCategories: {{ drug_categories|tojson }},
+        foodCategories: {{ food_categories|tojson }}
+    };
+    </script>
     <script src="{{ url_for('static', filename='js/script.js') }}"></script>
 </body>
 </html>

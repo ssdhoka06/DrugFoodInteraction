@@ -33,7 +33,7 @@ st.set_page_config(
 
 # Configuration - Replace with your actual file IDs
 DATA_FILE_ID = "1IhAkCHqs2FUDX9rzkZT12ov1xFweKEda"  # Your CSV file ID
-MODEL_FILE_ID = "1XQHlS8d8Rz3DYafdjJ3maE5XkWvivd8s"  # ⚠️ REPLACE WITH YOUR PICKLE FILE ID
+MODEL_FILE_ID = "1XQHlS8d8Rz3DYafdjJ3maE5XkWvivd8s"  # Your voting classifier model
 
 # Your exact feature engineering function from main_copy.py
 def create_features(drug, food):

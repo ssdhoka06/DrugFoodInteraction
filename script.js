@@ -4,7 +4,7 @@ $(document).ready(function() {
     // Load CSV data
     async function loadCSVData() {
         try {
-            const csvContent = await window.fs.readFile('/Users/sachidhoka/Desktop/balanced_drug_food_interactions.csv', { encoding: 'utf8' });
+            const csvContent = await window.fs.readFile('dfi project/data/balanced_drug_food_interactions.csv', { encoding: 'utf8' });
             const parsedData = Papa.parse(csvContent, {
                 header: true,
                 skipEmptyLines: true,

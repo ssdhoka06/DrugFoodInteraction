@@ -8,7 +8,7 @@
     <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
 </head>
 <body>
     <!-- Animated Background -->
@@ -29,7 +29,6 @@
                 <li><a href="#predictor">Predictor</a></li>
                 <li><a href="#dashboard">Dashboard</a></li>
                 <li><a href="#research">Research</a></li>
-                <li><a href="#chatbot">Chat</a></li>
                 <li class="auth-buttons">
                     <button class="btn-login">Login</button>
                     <button class="btn-signup">Sign Up</button>
@@ -239,49 +238,6 @@
             </div>
         </section>
 
-        <!-- Chatbot Section -->
-        <section id="chatbot" class="chatbot-section">
-            <div class="section-header">
-                <h2>Interaction Assistant</h2>
-                <p>Ask questions about drug-food interactions and get AI-powered answers</p>
-            </div>
-            
-            <div class="chatbot-container">
-                <div class="chatbot-header">
-                    <div class="chatbot-avatar">
-                        <i class="fas fa-robot"></i>
-                    </div>
-                    <div class="chatbot-info">
-                        <h3>DFI Assistant</h3>
-                        <p>AI-powered interaction specialist</p>
-                    </div>
-                    <div class="chatbot-controls">
-                        <button class="btn-chat-control"><i class="fas fa-cog"></i></button>
-                        <button class="btn-chat-control"><i class="fas fa-times"></i></button>
-                    </div>
-                </div>
-                
-                <div class="chatbot-messages">
-                    <div class="message-bot welcome-message">
-                        <div class="message-content">
-                            <p>Hello! I'm your Drug-Food Interaction Assistant. How can I help you today?</p>
-                            <p>You can ask me questions like:</p>
-                            <ul>
-                                <li>"What foods interact with warfarin?"</li>
-                                <li>"Can I drink coffee with my medication?"</li>
-                                <li>"Explain grapefruit-drug interactions"</li>
-                            </ul>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="chatbot-input">
-                    <input type="text" placeholder="Type your question about drug-food interactions...">
-                    <button class="btn-send"><i class="fas fa-paper-plane"></i></button>
-                </div>
-            </div>
-        </section>
-
         <!-- How It Works Section -->
         <section id="how-it-works" class="how-it-works">
             <div class="section-header">
@@ -476,6 +432,6 @@
     <!-- Scripts -->
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
-    <script src="{{ url_for('static', filename='script.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/script.js') }}"></script>
 </body>
 </html>

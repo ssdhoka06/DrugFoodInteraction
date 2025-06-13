@@ -118,7 +118,7 @@ print("=" * 80)
 print("\n📋 PHASE 1: ENHANCED DATA PREPROCESSING")
 print("-" * 40)
 
-def load_and_clean_foodrugs(filepath='/Users/sachidhoka/Desktop/food-drug interactions.csv'):  # Use the downloaded file by default
+def load_and_clean_foodrugs(filepath='balanced_drug_food_interactions.csv'):  # CHANGED FILE PATH HERE
     """Load and clean FooDrugs dataset with enhanced preprocessing"""
     print(f"Loading FooDrugs dataset from {filepath}...")
     
@@ -181,8 +181,6 @@ def load_and_clean_foodrugs(filepath='/Users/sachidhoka/Desktop/food-drug intera
     return df_clean
 
 df_clean = load_and_clean_foodrugs()
-
-
 
 drug_categories = {
     'anticoagulant': ['warfarin', 'heparin', 'coumadin', 'dabigatran', 'rivaroxaban', 'apixaban'],

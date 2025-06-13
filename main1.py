@@ -660,16 +660,39 @@ def display_prediction_results(prediction, confidence, probabilities, drug_input
         your healthcare provider for personalized medical advice.
         """)
     
-    # Model breakdown (since you use VotingClassifier)
-    with st.expander("🔍 Model Breakdown (VotingClassifier Details)"):
-        st.markdown("""
-        **Your model combines 3 classifiers:**
-        - 🔵 **Logistic Regression (lr)**
-        - 🟢 **Naive Bayes (nb)** 
-        - 🟣 **Random Forest (rf)**
-        
-        The final prediction uses soft voting (probability averaging) across all three models.
-        """)
+    # Model breakdown (adapt to actual model type)
+    with st.expander("🔍 Model Details"):
+        if hasattr(voting_clf, 'estimators_'):
+            # It's a VotingClassifier
+            st.markdown("""
+            **Your model combines 3 classifiers:**
+            - 🔵 **Logistic Regression (lr)**
+            - 🟢 **Naive Bayes (nb)** 
+            - 🟣 **Random Forest (rf)**
+            
+            The final prediction uses soft voting (probability averaging) across all three models.
+            """)
+        elif 'GradientBoosting' in str(type(voting_clf)):
+            # It's a GradientBoostingClassifier
+            st.markdown(f"""
+            **Your model is a Gradient Boosting Classifier:**
+            - 🌳 **Model Type:** {type(voting_clf).__name__}
+            - 🔄 **Ensemble Method:** Gradient Boosting (sequential weak learners)
+            - 📊 **Number of Estimators:** {getattr(voting_clf, 'n_estimators', 'N/A')}
+            - 🎯 **Learning Rate:** {getattr(voting_clf, 'learning_rate', 'N/A')}
+            - 📏 **Max Depth:** {getattr(voting_clf, 'max_depth', 'N/A')}
+            
+            Gradient Boosting builds models sequentially, where each new model corrects errors from previous ones.
+            """)
+        else:
+            # Generic model info
+            st.markdown(f"""
+            **Your model details:**
+            - 🤖 **Model Type:** {type(voting_clf).__name__}
+            - 📊 **Model Family:** {type(voting_clf).__module__}
+            
+            This model makes predictions based on the engineered features from drug and food names.
+            """)
 
 def display_dataset_info(df):
     """Display dataset information"""
@@ -737,12 +760,25 @@ def show_feature_analysis(drug_input, food_input):
 def main():
     """Main Streamlit app"""
     st.title("💊 Drug-Food Interaction Predictor")
-    st.markdown("*Using VotingClassifier (Logistic Regression + Naive Bayes + Random Forest)*")
-    st.markdown("---")
     
-    # Load data and model
+    # Load data and model first to determine actual model type
     df = load_data()
     voting_clf = load_voting_classifier()
+    
+    # Determine model type for subtitle
+    if voting_clf is not None:
+        model_name = type(voting_clf).__name__
+        if 'Voting' in model_name:
+            model_desc = "Using VotingClassifier (Logistic Regression + Naive Bayes + Random Forest)"
+        elif 'GradientBoosting' in model_name:
+            model_desc = "Using Gradient Boosting Classifier"
+        else:
+            model_desc = f"Using {model_name}"
+    else:
+        model_desc = "Model Loading..."
+    
+    st.markdown(f"*{model_desc}*")
+    st.markdown("---")
     
     # If main model failed to load, create fallback
     if voting_clf is None:
@@ -759,8 +795,14 @@ def main():
         st.sidebar.error("❌ Dataset failed to load")
         
     if voting_clf is not None:
-        st.sidebar.success("✅ VotingClassifier loaded")
-        st.sidebar.write(f"Model type: {type(voting_clf)}")
+        st.sidebar.success("✅ Model loaded")
+        st.sidebar.write(f"Model type: {type(voting_clf).__name__}")
+        
+        # Show model-specific info
+        if hasattr(voting_clf, 'n_estimators'):
+            st.sidebar.write(f"Estimators: {voting_clf.n_estimators}")
+        if hasattr(voting_clf, 'learning_rate'):
+            st.sidebar.write(f"Learning rate: {voting_clf.learning_rate}")
     else:
         st.sidebar.error("❌ Model failed to load")
         st.sidebar.markdown("**⚠️ Please upload your model to Google Drive and update MODEL_FILE_ID**")
@@ -840,10 +882,11 @@ def main():
         st.markdown("## ℹ️ About This Application")
         st.markdown("""
         ### 🤖 Model Architecture
-        This app uses your **VotingClassifier** that combines:
-        - **Logistic Regression (lr)**: Linear classification
-        - **Naive Bayes (nb)**: Probabilistic classification  
-        - **Random Forest (rf)**: Ensemble tree-based classification
+        This app uses your **Gradient Boosting Classifier**:
+        - **Gradient Boosting**: Sequential ensemble method that builds models iteratively
+        - **Weak Learners**: Typically decision trees that learn from previous errors
+        - **Boosting Strategy**: Each new tree corrects mistakes from previous trees
+        - **Final Prediction**: Combines all trees for robust classification
         
         ### 🔧 Feature Engineering
         The model uses **7 handcrafted features** from drug and food names:
@@ -857,8 +900,8 @@ def main():
         
         ### 📊 Prediction Process
         1. Extract features from drug/food names
-        2. Feed features to VotingClassifier
-        3. Get soft voting result (probability averaging)
+        2. Feed features to Gradient Boosting Classifier
+        3. Get ensemble prediction from multiple decision trees
         4. Return binary prediction + confidence scores
         
         ### ⚠️ Important Disclaimers
@@ -869,7 +912,7 @@ def main():
         
         ### 🛠 Technical Requirements
         To use this app, you need:
-        1. Your trained `voting_clf` model saved as pickle file
+        1. Your trained model saved as pickle file
         2. Upload model to Google Drive and get file ID
         3. Update `MODEL_FILE_ID` in the code
         
@@ -879,8 +922,8 @@ def main():
         import pickle
         
         # Save ONLY the model, not a dictionary
-        with open('voting_classifier_model.pkl', 'wb') as f:
-            pickle.dump(voting_clf, f)  # voting_clf should be the trained model
+        with open('model.pkl', 'wb') as f:
+            pickle.dump(your_trained_model, f)  # your actual trained model
         ```
         
         **If you saved results in a dictionary, extract the model first:**

@@ -69,12 +69,22 @@
                     <div class="form-row">
                         <div class="form-group">
                             <label for="drug"><i class="fas fa-prescription-bottle-alt"></i> Medication</label>
-                            <select id="drug" class="search-select"></select>
+                            <select id="drug" class="search-select" style="width: 100%">
+                                <option value="">Select a medication...</option>
+                                {% for drug in drugs %}
+                                <option value="{{ drug.value }}">{{ drug.label }}</option>
+                                {% endfor %}
+                            </select>
                         </div>
                         
                         <div class="form-group">
                             <label for="food"><i class="fas fa-utensils"></i> Food/Supplement</label>
-                            <select id="food" class="search-select"></select>
+                            <select id="food" class="search-select" style="width: 100%">
+                                <option value="">Select a food...</option>
+                                {% for food in foods %}
+                                <option value="{{ food.value }}">{{ food.label }}</option>
+                                {% endfor %}
+                            </select>
                         </div>
                     </div>
                     
@@ -432,16 +442,62 @@
     <!-- Scripts -->
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
-    <!-- Add this right before your script.js include -->
-    <script>
-        // Make the data available to your JavaScript
-        window.appData = {
-        drugs: {{ all_drugs|tojson }},
-        foods: {{ all_foods|tojson }},
-        drugCategories: {{ drug_categories|tojson }},
-        foodCategories: {{ food_categories|tojson }}
-    };
-    </script>
     <script src="{{ url_for('static', filename='js/script.js') }}"></script>
+    <script>
+    $(document).ready(function() {
+        // Initialize Select2 dropdowns
+        $('.search-select').select2({
+            placeholder: function() {
+                return $(this).attr('id') === 'drug' ? 'Select a medication...' : 'Select a food...';
+            },
+            allowClear: true,
+            width: 'resolve'
+        });
+
+        // Form submission handler
+        $('#interactionForm').on('submit', function(e) {
+            e.preventDefault();
+            const drug = $('#drug').val();
+            const food = $('#food').val();
+            
+            if (!drug || !food) {
+                alert('Please select both a medication and a food item');
+                return;
+            }
+            
+            // Here you would make your AJAX call to the backend
+            console.log('Selected drug:', drug);
+            console.log('Selected food:', food);
+            
+            // Example of what you might do with the response
+            $('#output').html(`
+                <div class="result-card">
+                    <h3>Interaction Analysis</h3>
+                    <div class="risk-level high">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <span>High Risk Interaction</span>
+                    </div>
+                    <p><strong>${drug}</strong> and <strong>${food}</strong> may interact in a way that could be harmful.</p>
+                    <div class="recommendation">
+                        <h4>Recommendation:</h4>
+                        <p>Avoid consuming these together. Consult your healthcare provider for alternatives.</p>
+                    </div>
+                </div>
+            `);
+        });
+
+        // Clear form handler
+        $('.btn-clear').on('click', function() {
+            $('#drug').val('').trigger('change');
+            $('#food').val('').trigger('change');
+            $('#output').html(`
+                <div class="results-placeholder">
+                    <i class="fas fa-microscope"></i>
+                    <p>Enter a drug and food combination to see interaction analysis</p>
+                </div>
+            `);
+        });
+    });
+    </script>
 </body>
 </html>

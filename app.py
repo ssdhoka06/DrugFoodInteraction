@@ -20,59 +20,6 @@ import random
 import logging
 from functools import wraps
 
-def categorize_entity(name, categories):
-    """Categorize a drug or food based on name"""
-    name_lower = name.lower()
-    for category, keywords in categories.items():
-        for keyword in keywords:
-            if keyword in name_lower:
-                return category
-    return 'other'
-
-def get_interaction_explanation(mechanism, drug_category, food_category):
-    """Get explanation for interaction mechanism"""
-    explanations = {
-        'cyp3a4_inhibition': (
-            f"Components in {food_category} inhibit CYP3A4 enzymes in the liver, which are "
-            f"responsible for metabolizing {drug_category} medications. This can lead to "
-            "increased drug levels in the blood."
-        ),
-        'vitamin_k_competition': (
-            f"{food_category} contains vitamin K which opposes the blood-thinning effects "
-            f"of {drug_category} medications by supporting clotting factor production."
-        ),
-        'calcium_chelation': (
-            f"Calcium in {food_category} binds to {drug_category}, forming insoluble "
-            "complexes that reduce drug absorption in the gastrointestinal tract."
-        ),
-        'absorption_interference': (
-            f"{food_category} may delay or reduce the absorption of {drug_category} by "
-            "affecting gastric emptying or forming physical barriers in the GI tract."
-        )
-    }
-    return explanations.get(mechanism, "Potential interaction through an unspecified mechanism.")
-
-def get_recommendations(mechanism, risk_level):
-    """Get recommendations based on mechanism and risk level"""
-    recommendations = {
-        'HIGH': {
-            'cyp3a4_inhibition': 'Avoid consuming these together. Consider alternative medications or foods.',
-            'vitamin_k_competition': 'Maintain consistent vitamin K intake. Monitor INR closely and adjust warfarin dose as needed.',
-            'default': 'Avoid combination. Consult healthcare provider for alternatives.'
-        },
-        'MODERATE': {
-            'calcium_chelation': 'Take medication 2 hours before or 4 hours after consuming calcium-rich foods.',
-            'absorption_interference': 'Take medication on an empty stomach if possible, or at consistent times relative to meals.',
-            'default': 'Space administration times. Monitor for reduced efficacy or side effects.'
-        },
-        'LOW': {
-            'default': 'Minimal clinical significance. No special precautions required for most patients.'
-        }
-    }
-    
-    risk_recs = recommendations.get(risk_level, {})
-    return risk_recs.get(mechanism, risk_recs.get('default', 'Monitor for any unexpected effects.'))
-
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -183,48 +130,84 @@ def json_response(func):
 # Define paths to data files
 DATA_DIR = os.path.join(os.path.dirname(__file__), 'data')
 MODELS_DIR = os.path.join(os.path.dirname(__file__), 'models')
+os.makedirs(DATA_DIR, exist_ok=True)
+os.makedirs(MODELS_DIR, exist_ok=True)
+
+# Try multiple possible paths for the data file
+DATA_PATHS = [
+    os.path.join(DATA_DIR, 'balanced_drug_food_interactions.csv'),  # Relative path
+    '/Users/sachidhoka/Desktop/balanced_drug_food_interactions.csv',  # Absolute path
+    os.path.join('dfi project', 'data', 'balanced_drug_food_interactions.csv')  # Alternative relative path
+]
 
 # Load and cache data
-try:
-    df = pd.read_csv('/Users/sachidhoka/Desktop/balanced_drug_food_interactions.csv')
-    all_drugs = sorted(set(df['drug'].dropna().str.strip()))
-    all_foods = sorted(set(df['food'].dropna().str.strip()))
-    
-    # Extract categories from dataset
-    drug_categories = {}
-    food_categories = {}
-    
-    # Create category mappings from your dataset
-    for _, row in df.iterrows():
-        drug = row['drug']
-        food = row['food']
-        drug_cat = row['drug_category'] if pd.notna(row['drug_category']) else 'other'
-        food_cat = row['food_category'] if pd.notna(row['food_category']) else 'other'
+df = None
+all_drugs = []
+all_foods = []
+drug_categories = {}
+food_categories = {}
+high_risk_interactions = []
+
+for data_path in DATA_PATHS:
+    try:
+        df = pd.read_csv(data_path)
+        logger.info(f"Data loaded successfully from {data_path}")
         
-        if drug_cat not in drug_categories:
-            drug_categories[drug_cat] = []
-        if drug.lower() not in [d.lower() for d in drug_categories[drug_cat]]:
-            drug_categories[drug_cat].append(drug.lower())
+        # Clean and process data
+        df = df.dropna(subset=['drug', 'food'])
+        df['drug'] = df['drug'].str.strip().str.lower()
+        df['food'] = df['food'].str.strip().str.lower()
+        
+        # Get unique drugs and foods
+        all_drugs = sorted(df['drug'].unique())
+        all_foods = sorted(df['food'].unique())
+        
+        # Extract categories from dataset
+        drug_categories = {}
+        food_categories = {}
+        
+        # Create category mappings from your dataset
+        for _, row in df.iterrows():
+            drug = row['drug']
+            food = row['food']
+            drug_cat = row['drug_category'] if 'drug_category' in df.columns and pd.notna(row['drug_category']) else 'other'
+            food_cat = row['food_category'] if 'food_category' in df.columns and pd.notna(row['food_category']) else 'other'
             
-        if food_cat not in food_categories:
-            food_categories[f'food_cat'] = []
-        if food.lower() not in [f.lower() for f in food_categories[food_cat]]:
-            food_categories[food_cat].append(food.lower())
-    
-    # Extract high risk interactions from dataset
-    high_risk_interactions = []
-    high_risk_data = df[df['risk_level'] == 'HIGH']
-    for _, row in high_risk_data.iterrows():
-        high_risk_interactions.append({
-            'drug': row['drug'],
-            'food': row['food'],
-            'mechanism': row['mechanism'] if pd.notna(row['mechanism']) else 'unknown',
-            'explanation': f"High risk interaction between {row['drug']} and {row['food']}",
-            'recommendations': get_recommendations(row['mechanism'] if pd.notna(row['mechanism']) else 'unknown', 'HIGH'),
-            'risk_level': 'HIGH'
-        })
-except Exception as e:
-    logger.error(f"Error loading data files: {str(e)}")
+            if drug_cat not in drug_categories:
+                drug_categories[drug_cat] = []
+            if drug.lower() not in [d.lower() for d in drug_categories[drug_cat]]:
+                drug_categories[drug_cat].append(drug.lower())
+                
+            if food_cat not in food_categories:
+                food_categories[food_cat] = []
+            if food.lower() not in [f.lower() for f in food_categories[food_cat]]:
+                food_categories[food_cat].append(food.lower())
+        
+        # Extract high risk interactions from dataset
+        if 'risk_level' in df.columns:
+            high_risk_data = df[df['risk_level'] == 'HIGH']
+            for _, row in high_risk_data.iterrows():
+                high_risk_interactions.append({
+                    'drug': row['drug'],
+                    'food': row['food'],
+                    'mechanism': row['mechanism'] if 'mechanism' in df.columns and pd.notna(row['mechanism']) else 'unknown',
+                    'explanation': f"High risk interaction between {row['drug']} and {row['food']}",
+                    'recommendations': "Avoid this combination as it may cause serious health risks",
+                    'risk_level': 'HIGH'
+                })
+        
+        logger.info(f"Data processed successfully: {len(all_drugs)} drugs, {len(all_foods)} foods")
+        break  # Stop if we successfully loaded the data
+        
+    except FileNotFoundError:
+        logger.warning(f"CSV file not found at {data_path}")
+        continue
+    except Exception as e:
+        logger.error(f"Error loading data file at {data_path}: {str(e)}")
+        continue
+
+if df is None:
+    logger.error("Could not load data from any of the specified paths. Using empty datasets.")
     all_drugs = []
     all_foods = []
     drug_categories = {}
@@ -233,19 +216,77 @@ except Exception as e:
 
 # Load ML model
 try:
-    with open(os.path.join(MODELS_DIR, 'best_drug_food_interaction_model.pkl'), 'rb') as f:
+    model_path = os.path.join(MODELS_DIR, 'best_drug_food_interaction_model.pkl')
+    with open(model_path, 'rb') as f:
         model_package = pickle.load(f)
     best_model = model_package['model']
     feature_info = model_package['feature_info']
     scaler = model_package['scaler']
     logger.info("ML model loaded successfully")
+except FileNotFoundError:
+    logger.warning("ML model file not found. Using mock predictions.")
+    best_model = None
+    feature_info = {'feature_names': []}
+    scaler = None
 except Exception as e:
     logger.error(f"Error loading ML model: {str(e)}")
     best_model = None
     feature_info = {'feature_names': []}
     scaler = None
 
-# Mock ML functions for demonstration
+def categorize_entity(name, categories):
+    """Categorize a drug or food based on name"""
+    name_lower = name.lower()
+    for category, keywords in categories.items():
+        for keyword in keywords:
+            if keyword in name_lower:
+                return category
+    return 'other'
+
+def get_interaction_explanation(mechanism, drug_category, food_category):
+    """Get explanation for interaction mechanism"""
+    explanations = {
+        'cyp3a4_inhibition': (
+            f"Components in {food_category} inhibit CYP3A4 enzymes in the liver, which are "
+            f"responsible for metabolizing {drug_category} medications. This can lead to "
+            "increased drug levels in the blood."
+        ),
+        'vitamin_k_competition': (
+            f"{food_category} contains vitamin K which opposes the blood-thinning effects "
+            f"of {drug_category} medications by supporting clotting factor production."
+        ),
+        'calcium_chelation': (
+            f"Calcium in {food_category} binds to {drug_category}, forming insoluble "
+            "complexes that reduce drug absorption in the gastrointestinal tract."
+        ),
+        'absorption_interference': (
+            f"{food_category} may delay or reduce the absorption of {drug_category} by "
+            "affecting gastric emptying or forming physical barriers in the GI tract."
+        )
+    }
+    return explanations.get(mechanism, "Potential interaction through an unspecified mechanism.")
+
+def get_recommendations(mechanism, risk_level):
+    """Get recommendations based on mechanism and risk level"""
+    recommendations = {
+        'HIGH': {
+            'cyp3a4_inhibition': 'Avoid consuming these together. Consider alternative medications or foods.',
+            'vitamin_k_competition': 'Maintain consistent vitamin K intake. Monitor INR closely and adjust warfarin dose as needed.',
+            'default': 'Avoid combination. Consult healthcare provider for alternatives.'
+        },
+        'MODERATE': {
+            'calcium_chelation': 'Take medication 2 hours before or 4 hours after consuming calcium-rich foods.',
+            'absorption_interference': 'Take medication on an empty stomach if possible, or at consistent times relative to meals.',
+            'default': 'Space administration times. Monitor for reduced efficacy or side effects.'
+        },
+        'LOW': {
+            'default': 'Minimal clinical significance. No special precautions required for most patients.'
+        }
+    }
+    
+    risk_recs = recommendations.get(risk_level, {})
+    return risk_recs.get(mechanism, risk_recs.get('default', 'Monitor for any unexpected effects.'))
+
 def predict_new_interaction_with_explanation(drug, food, model=None):
     """Predict interaction between drug and food with explanation"""
     
@@ -262,10 +303,10 @@ def predict_new_interaction_with_explanation(drug, food, model=None):
     if not dataset_match.empty:
         # Use data from your dataset
         row = dataset_match.iloc[0]
-        interaction = bool(row['interaction']) if pd.notna(row['interaction']) else False
+        interaction = bool(row['interaction']) if 'interaction' in df.columns and pd.notna(row['interaction']) else False
         
         # Convert risk level to probability
-        risk_level = row['risk_level'] if pd.notna(row['risk_level']) else 'LOW'
+        risk_level = row['risk_level'] if 'risk_level' in df.columns and pd.notna(row['risk_level']) else 'LOW'
         if risk_level == 'HIGH':
             probability = 0.9
         elif risk_level == 'MODERATE':
@@ -273,9 +314,9 @@ def predict_new_interaction_with_explanation(drug, food, model=None):
         else:
             probability = 0.3
             
-        mechanism = row['mechanism'] if pd.notna(row['mechanism']) else 'unknown'
-        drug_category = row['drug_category'] if pd.notna(row['drug_category']) else 'other'
-        food_category = row['food_category'] if pd.notna(row['food_category']) else 'other'
+        mechanism = row['mechanism'] if 'mechanism' in df.columns and pd.notna(row['mechanism']) else 'unknown'
+        drug_category = row['drug_category'] if 'drug_category' in df.columns and pd.notna(row['drug_category']) else 'other'
+        food_category = row['food_category'] if 'food_category' in df.columns and pd.notna(row['food_category']) else 'other'
         
         explanation = get_interaction_explanation(mechanism, drug_category, food_category)
         recommendations = get_recommendations(mechanism, risk_level)
@@ -298,21 +339,22 @@ def predict_new_interaction_with_explanation(drug, food, model=None):
     
     if not drug_matches.empty and not food_matches.empty:
         # Get most common drug and food categories for this input
-        drug_category = drug_matches['drug_category'].mode().iloc[0] if not drug_matches['drug_category'].mode().empty else 'other'
-        food_category = food_matches['food_category'].mode().iloc[0] if not food_matches['food_category'].mode().empty else 'other'
+        drug_category = drug_matches['drug_category'].mode().iloc[0] if 'drug_category' in df.columns and not drug_matches['drug_category'].mode().empty else 'other'
+        food_category = food_matches['food_category'].mode().iloc[0] if 'food_category' in df.columns and not food_matches['food_category'].mode().empty else 'other'
         
         # Look for interactions between these categories
         category_matches = df[
             (df['drug_category'] == drug_category) & 
-            (df['food_category'] == food_category) &
-            (df['interaction'] == True)
+            (df['food_category'] == food_category)
         ]
+        if 'interaction' in df.columns:
+            category_matches = category_matches[category_matches['interaction'] == True]
         
         if not category_matches.empty:
             # Use the most common interaction pattern for this category combination
             row = category_matches.iloc[0]
-            risk_level = row['risk_level'] if pd.notna(row['risk_level']) else 'MODERATE'
-            mechanism = row['mechanism'] if pd.notna(row['mechanism']) else 'unknown'
+            risk_level = row['risk_level'] if 'risk_level' in df.columns and pd.notna(row['risk_level']) else 'MODERATE'
+            mechanism = row['mechanism'] if 'mechanism' in df.columns and pd.notna(row['mechanism']) else 'unknown'
             
             probability = 0.8 if risk_level == 'HIGH' else 0.6 if risk_level == 'MODERATE' else 0.4
             
@@ -344,34 +386,6 @@ def predict_new_interaction_with_explanation(drug, food, model=None):
         'known_interaction': False
     }
 
-def check_meal_plan_compatibility(medications, meal_plan):
-    """Check compatibility of medications with meal plan"""
-    interactions = []
-    
-    for med in medications:
-        for food_item in meal_plan:
-            # Check if this is a known high-risk combination
-            med_lower = med.lower()
-            food_lower = food_item.lower()
-            
-            for interaction in high_risk_interactions:
-                if (med_lower in interaction['drug'].lower() and 
-                    food_lower in interaction['food'].lower()):
-                    interactions.append({
-                        'drug': med,
-                        'food': food_item,
-                        'risk_level': 'HIGH',
-                        'mechanism': interaction['mechanism'],
-                        'recommendation': interaction['recommendations']
-                    })
-                    break
-    
-    return {
-        'interactions_found': len(interactions) > 0,
-        'interactions': interactions,
-        'summary': f"Found {len(interactions)} potential interactions in your meal plan."
-    }
-
 def get_similar_interactions(drug, food):
     """Get similar known interactions for display"""
     drug_category = categorize_entity(drug, drug_categories)
@@ -394,49 +408,14 @@ def get_similar_interactions(drug, food):
 # Routes
 @app.route('/')
 def home():
-    return render_template("index.html")
-
-@app.route('/api/search/drugs')
-@json_response
-def search_drugs():
-    query = request.args.get('q', '').lower().strip()
-    if not query or len(query) < 2:
-        return {'results': []}
-    
-    results = []
-    for drug in all_drugs:
-        if query in drug.lower():
-            category = categorize_entity(drug, drug_categories)
-            results.append({
-                'id': drug,
-                'text': drug,
-                'category': category.replace('_', ' ').title()
-            })
-            if len(results) >= 20:
-                break
-    
-    return {'results': results}
-
-@app.route('/api/search/foods')
-@json_response
-def search_foods():
-    query = request.args.get('q', '').lower().strip()
-    if not query or len(query) < 2:
-        return {'results': []}
-    
-    results = []
-    for food in all_foods:
-        if query in food.lower():
-            category = categorize_entity(food, food_categories)
-            results.append({
-                'id': food,
-                'text': food,
-                'category': category.replace('_', ' ').title()
-            })
-            if len(results) >= 20:
-                break
-    
-    return {'results': results}
+    # Pass drug and food data directly to the template
+    return render_template(
+        "index.html",
+        drugs=[{'value': drug, 'label': drug.title()} for drug in all_drugs],
+        foods=[{'value': food, 'label': food.title()} for food in all_foods],
+        drug_categories={k: [d.title() for d in v] for k, v in drug_categories.items()},
+        food_categories={k: [f.title() for f in v] for k, v in food_categories.items()}
+    )
 
 @app.route('/api/predict', methods=['POST'])
 @login_required

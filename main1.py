@@ -439,19 +439,69 @@ st.set_page_config(
 DATA_FILE_ID = "1IhAkCHqs2FUDX9rzkZT12ov1xFweKEda"  # Your CSV file ID
 MODEL_FILE_ID = "1XQHlS8d8Rz3DYafdjJ3maE5XkWvivd8s"  # Your voting classifier model
 
-# Your exact feature engineering function from main_copy.py
+# Updated feature engineering function to match your trained model
 def create_features(drug, food):
-    """Create features exactly as in your original code"""
-    features = {
-        'drug_length': len(drug),
-        'food_length': len(food),
-        'common_letters': len(set(drug.lower()) & set(food.lower())),
-        'drug_starts_with_same_letter': int(drug[0].lower() == food[0].lower()),
-        'drug_ends_with_same_letter': int(drug[-1].lower() == food[-1].lower()),
-        'food_contains_drug': int(drug.lower() in food.lower()),
-        'drug_contains_food': int(food.lower() in drug.lower())
+    """Create features exactly as your trained model expects"""
+    
+    # Define drug categories based on common drug types
+    drug_categories = {
+        'antibiotic': ['amoxicillin', 'penicillin', 'azithromycin', 'ciprofloxacin', 'doxycycline'],
+        'anticoagulant': ['warfarin', 'heparin', 'superwarfin', 'coumadin'],
+        'antidepressant': ['sertraline', 'fluoxetine', 'prozac', 'zoloft'],
+        'antihypertensive': ['lisinopril', 'amlodipine', 'metoprolol', 'losartan'],
+        'analgesic': ['aspirin', 'ibuprofen', 'acetaminophen', 'naproxen'],
+        'statin': ['atorvastatin', 'simvastatin', 'rosuvastatin'],
     }
+    
+    # Define food categories
+    food_categories = {
+        'citrus': ['orange', 'lemon', 'lime', 'grapefruit', 'grape fruit'],
+        'leafy': ['spinach', 'kale', 'lettuce', 'collard'],
+        'dairy': ['milk', 'cheese', 'yogurt', 'butter'],
+        'alcohol': ['wine', 'beer', 'alcohol'],
+        'caffeine': ['coffee', 'tea', 'cola'],
+    }
+    
+    # Initialize features dictionary
+    features = {}
+    
+    # Drug category features
+    drug_lower = drug.lower()
+    for category, drugs in drug_categories.items():
+        features[f'drug_{category}'] = int(any(d in drug_lower for d in drugs))
+    
+    # Food category features  
+    food_lower = food.lower()
+    for category, foods in food_categories.items():
+        features[f'food_{category}'] = int(any(f in food_lower for f in foods))
+    
+    # Combined features
+    features['both_other'] = int(
+        not any(features[f'drug_{cat}'] for cat in drug_categories.keys()) and
+        not any(features[f'food_{cat}'] for cat in food_categories.keys())
+    )
+    
+    # Length features (if your model uses them)
+    features['drug_length'] = len(drug)
+    features['food_length'] = len(food)
+    
+    # String matching features
+    features['common_letters'] = len(set(drug_lower) & set(food_lower))
+    features['contains_match'] = int(drug_lower in food_lower or food_lower in drug_lower)
+    
     return pd.DataFrame([features])
+
+# Alternative function to get model's expected features
+def get_model_feature_names(model):
+    """Try to extract feature names from the trained model"""
+    if hasattr(model, 'feature_names_in_'):
+        return list(model.feature_names_in_)
+    elif hasattr(model, 'feature_importances_'):
+        # For models with feature importances, we can infer the number of features
+        n_features = len(model.feature_importances_)
+        return [f'feature_{i}' for i in range(n_features)]
+    else:
+        return None
 
 # Caching functions
 @st.cache_data
@@ -575,17 +625,36 @@ def create_fallback_model():
 def predict_interaction(drug_input, food_input, voting_clf):
     """Make prediction using your exact pipeline"""
     try:
+        # Get expected feature names from model
+        expected_features = None
+        if hasattr(voting_clf, 'feature_names_in_'):
+            expected_features = list(voting_clf.feature_names_in_)
+            st.sidebar.write(f"Expected features: {expected_features[:5]}...")  # Show first 5
+        
         # Use your exact feature engineering
         features = create_features(drug_input, food_input)
         
         # Debug: Show feature values
         st.sidebar.write("Generated features:")
-        st.sidebar.write(features)
+        st.sidebar.write(list(features.columns))
         
-        # Make prediction using your VotingClassifier
+        # If we know expected features, try to match them
+        if expected_features:
+            # Create a dataframe with all expected features, filled with 0
+            aligned_features = pd.DataFrame(0, index=[0], columns=expected_features)
+            
+            # Fill in the features we can calculate
+            for col in features.columns:
+                if col in expected_features:
+                    aligned_features[col] = features[col].iloc[0]
+            
+            features = aligned_features
+            st.sidebar.write(f"Aligned features shape: {features.shape}")
+        
+        # Make prediction using your model
         prediction = voting_clf.predict(features)[0]
         
-        # Get prediction probabilities (since you use voting='soft')
+        # Get prediction probabilities
         probabilities = voting_clf.predict_proba(features)[0]
         confidence = max(probabilities)
         
@@ -595,7 +664,12 @@ def predict_interaction(drug_input, food_input, voting_clf):
         st.error(f"Error during prediction: {e}")
         st.error(f"Model type: {type(voting_clf)}")
         st.error(f"Features shape: {features.shape}")
-        st.error(f"Features: {features}")
+        st.error(f"Features columns: {list(features.columns)}")
+        
+        # Show model's expected features if available
+        if hasattr(voting_clf, 'feature_names_in_'):
+            st.error(f"Model expects: {list(voting_clf.feature_names_in_)}")
+        
         return None, None, None
 
 def display_prediction_results(prediction, confidence, probabilities, drug_input, food_input):
@@ -744,18 +818,30 @@ def show_feature_analysis(drug_input, food_input):
             - Drug: `{drug_input}`
             - Food: `{food_input}`
             """)
+            
+            # Show drug categories detected
+            st.markdown("**Drug Categories Detected:**")
+            drug_cols = [col for col in features.columns if col.startswith('drug_')]
+            for col in drug_cols:
+                if features[col].iloc[0] == 1:
+                    st.write(f"✅ {col.replace('drug_', '').title()}")
         
         with col2:
-            st.markdown(f"""
-            **Calculated Features:**
-            - Drug Length: `{len(drug_input)}`
-            - Food Length: `{len(food_input)}`
-            - Common Letters: `{len(set(drug_input.lower()) & set(food_input.lower()))}`
-            - Same Start Letter: `{drug_input[0].lower() == food_input[0].lower()}`
-            - Same End Letter: `{drug_input[-1].lower() == food_input[-1].lower()}`
-            - Food Contains Drug: `{drug_input.lower() in food_input.lower()}`
-            - Drug Contains Food: `{food_input.lower() in drug_input.lower()}`
-            """)
+            st.markdown("**Food Categories Detected:**")
+            food_cols = [col for col in features.columns if col.startswith('food_')]
+            for col in food_cols:
+                if features[col].iloc[0] == 1:
+                    st.write(f"✅ {col.replace('food_', '').title()}")
+            
+            # Show other features
+            st.markdown("**Other Features:**")
+            other_cols = [col for col in features.columns if not col.startswith(('drug_', 'food_'))]
+            for col in other_cols:
+                st.write(f"{col}: {features[col].iloc[0]}")
+        
+        # Show full feature vector
+        st.markdown("**Complete Feature Vector:**")
+        st.dataframe(features)
 
 def main():
     """Main Streamlit app"""
@@ -803,6 +889,18 @@ def main():
             st.sidebar.write(f"Estimators: {voting_clf.n_estimators}")
         if hasattr(voting_clf, 'learning_rate'):
             st.sidebar.write(f"Learning rate: {voting_clf.learning_rate}")
+            
+        # Show expected features
+        if hasattr(voting_clf, 'feature_names_in_'):
+            st.sidebar.markdown("**Expected Features:**")
+            expected_features = list(voting_clf.feature_names_in_)
+            st.sidebar.write(f"Total: {len(expected_features)}")
+            
+            # Show first 10 features
+            for i, feat in enumerate(expected_features[:10]):
+                st.sidebar.write(f"{i+1}. {feat}")
+            if len(expected_features) > 10:
+                st.sidebar.write(f"... and {len(expected_features) - 10} more")
     else:
         st.sidebar.error("❌ Model failed to load")
         st.sidebar.markdown("**⚠️ Please upload your model to Google Drive and update MODEL_FILE_ID**")

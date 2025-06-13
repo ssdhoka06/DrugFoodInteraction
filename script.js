@@ -1,305 +1,91 @@
 $(document).ready(function() {
-    let drugFoodData = [];
-
-    # Add this to your Flask app.py file
-
-@app.route('/api/drug-food-data')
-def get_drug_food_data():
-    try:
-        # Load your CSV data here
-        import pandas as pd
-        df = pd.read_csv('dfi project/data/balanced_drug_food_interactions.csv')
-        
-        # Convert to JSON format
-        data = df.to_dict('records')
-        
-        return jsonify({
-            'success': True,
-            'data': data,
-            'count': len(data)
-        })
-    except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
-    async function loadCSVData() {
-        try {
-            const response = await fetch('/api/drug-food-data');
-            const result = await response.json();
-            
-            if (result.success) {
-                drugFoodData = result.data;
-                console.log('CSV data loaded:', drugFoodData.length, 'records');
-                
-                // Initialize Select2 dropdowns after data is loaded
-                initializeSelect2();
-            } else {
-                console.error('Error loading CSV:', result.error);
-            }
-        } catch (error) {
-            console.error('Error loading CSV:', error);
-        }
-    }
-
-    // Initialize Select2 dropdowns
+    // Initialize Select2 dropdowns with data from Flask template
     function initializeSelect2() {
-        // Initialize Select2 for drug search
+        // Drug dropdown
         $('#drug').select2({
-            placeholder: "Search for a medication...",
+            placeholder: "Select a medication...",
             allowClear: true,
-            data: function() {
-                const uniqueDrugs = [...new Set(drugFoodData.map(row => row.drug))];
-                return uniqueDrugs.map(drug => ({
-                    id: drug,
-                    text: drug,
-                    category: drugFoodData.find(row => row.drug === drug)?.drug_category || ''
-                }));
-            }(),
-            templateResult: formatDrugResult,
-            templateSelection: formatDrugSelection
+            width: '100%',
+            data: window.drugs || []  // Use data passed from Flask template
         });
 
-        // Initialize Select2 for food search
+        // Food dropdown
         $('#food').select2({
-            placeholder: "Search for a food or supplement...",
+            placeholder: "Select a food...",
             allowClear: true,
-            data: function() {
-                const uniqueFoods = [...new Set(drugFoodData.map(row => row.food))];
-                return uniqueFoods.map(food => ({
-                    id: food,
-                    text: food,
-                    category: drugFoodData.find(row => row.food === food)?.food_category || ''
-                }));
-            }(),
-            templateResult: formatFoodResult,
-            templateSelection: formatFoodSelection
+            width: '100%',
+            data: window.foods || []  // Use data passed from Flask template
         });
     }
 
-    // Call the function to load data
-    loadCSVData();
-
-
-});
-
-    // Initialize Select2 for drug search
-    $('#drug').select2({
-        placeholder: "Search for a medication...",
-        allowClear: true,
-        data: function() {
-            const uniqueDrugs = [...new Set(drugFoodData.map(row => row.drug))];
-            return uniqueDrugs.map(drug => ({
-                id: drug,
-                text: drug,
-                category: drugFoodData.find(row => row.drug === drug)?.drug_category || ''
-            }));
-        }(),
-        templateResult: formatDrugResult,
-        templateSelection: formatDrugSelection
-    });
-
-    // Initialize Select2 for food search
-    $('#food').select2({
-        placeholder: "Search for a food or supplement...",
-        allowClear: true,
-        data: function() {
-            const uniqueFoods = [...new Set(drugFoodData.map(row => row.food))];
-            return uniqueFoods.map(food => ({
-                id: food,
-                text: food,
-                category: drugFoodData.find(row => row.food === food)?.food_category || ''
-            }));
-        }(),
-        templateResult: formatFoodResult,
-        templateSelection: formatFoodSelection
-    });
-
-    // Format drug search results
-    function formatDrugResult(drug) {
-        if (!drug.id) {
-            return drug.text;
-        }
-        
-        var $result = $(
-            '<div class="select2-result">' +
-                '<div class="select2-result__title">' + drug.text + '</div>' +
-                (drug.category ? '<div class="select2-result__category">' + drug.category + '</div>' : '') +
-            '</div>'
-        );
-        
-        return $result;
-    }
-
-    // Format drug selection display
-    function formatDrugSelection(drug) {
-        if (!drug.id) {
-            return drug.text;
-        }
-        
-        return $(
-            '<div class="selected-item">' +
-                '<span class="selected-item__name">' + drug.text + '</span>' +
-                (drug.category ? '<span class="selected-item__category">' + drug.category + '</span>' : '') +
-            '</div>'
-        );
-    }
-
-    // Format food search results
-    function formatFoodResult(food) {
-        if (!food.id) {
-            return food.text;
-        }
-        
-        var $result = $(
-            '<div class="select2-result">' +
-                '<div class="select2-result__title">' + food.text + '</div>' +
-                (food.category ? '<div class="select2-result__category">' + food.category + '</div>' : '') +
-            '</div>'
-        );
-        
-        return $result;
-    }
-
-    // Format food selection display
-    function formatFoodSelection(food) {
-        if (!food.id) {
-            return food.text;
-        }
-        
-        return $(
-            '<div class="selected-item">' +
-                '<span class="selected-item__name">' + food.text + '</span>' +
-                (food.category ? '<span class="selected-item__category">' + food.category + '</span>' : '') +
-            '</div>'
-        );
-    }
-
-    // Clear form button
-    $('.btn-clear').click(function() {
-        $('#drug').val(null).trigger('change');
-        $('#food').val(null).trigger('change');
-        $('#output').html(`
-            <div class="results-placeholder">
-                <i class="fas fa-microscope"></i>
-                <p>Enter a drug and food combination to see interaction analysis</p>
-            </div>
-        `);
-    });
+    // Initialize dropdowns when page loads
+    initializeSelect2();
 
     // Handle form submission
     $('#interactionForm').on('submit', function(e) {
         e.preventDefault();
         
-        const drugId = $('#drug').val();
-        const drugText = $('#drug').select2('data')[0]?.text || '';
-        const foodId = $('#food').val();
-        const foodText = $('#food').select2('data')[0]?.text || '';
+        const drug = $('#drug').val();
+        const food = $('#food').val();
         
-        const outputDiv = $('#output');
-        
-        if (!drugId || !foodId) {
-            outputDiv.html('<div class="alert alert-danger">Please select both a medication and a food item.</div>');
+        if (!drug || !food) {
+            showAlert('Please select both a medication and a food item', 'error');
             return;
         }
         
         // Show loading state
-        outputDiv.html(`
+        showLoading(drug, food);
+        
+        // Send prediction request to backend
+        $.ajax({
+            url: '/api/predict',
+            type: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({
+                drug: drug,
+                food: food
+            }),
+            success: function(response) {
+                if (response.success) {
+                    displayPredictionResults(response.data);
+                } else {
+                    showAlert(response.error || 'Error processing your request', 'error');
+                }
+            },
+            error: function(xhr) {
+                const errorMsg = xhr.responseJSON?.error || 'Server error occurred';
+                showAlert(errorMsg, 'error');
+            }
+        });
+    });
+
+    // Display loading state
+    function showLoading(drug, food) {
+        $('#output').html(`
             <div class="loading-state">
                 <div class="spinner"></div>
-                <p>Analyzing interaction between <strong>${drugText}</strong> and <strong>${foodText}</strong>...</p>
+                <p>Analyzing interaction between <strong>${drug}</strong> and <strong>${food}</strong>...</p>
             </div>
         `);
-        
-        // Find actual interaction data instead of mock response
-        const actualInteraction = drugFoodData.find(row => 
-            row.drug === drugText && row.food === foodText
-        );
+    }
 
-        if (actualInteraction) {
-            displayPredictionResults({
-                drug: actualInteraction.drug,
-                food: actualInteraction.food,
-                interaction_predicted: actualInteraction.interaction === 1 || actualInteraction.interaction === true,
-                probability: actualInteraction.interaction === 1 ? 0.95 : 0.05,
-                drug_category: actualInteraction.drug_category,
-                food_category: actualInteraction.food_category,
-                mechanism: actualInteraction.mechanism,
-                risk_level: actualInteraction.risk_level,
-                confidence: 'High',
-                explanation: getMechanismExplanation(actualInteraction.mechanism, actualInteraction.drug_category, actualInteraction.food_category),
-                recommendations: getRecommendation(actualInteraction.mechanism, actualInteraction.risk_level)
-            });
-        } else {
-            displayPredictionResults({
-                drug: drugText,
-                food: foodText,
-                interaction_predicted: false,
-                probability: 0.05,
-                drug_category: 'unknown',
-                food_category: 'unknown',
-                mechanism: 'none',
-                risk_level: 'LOW',
-                confidence: 'Low',
-                explanation: 'No interaction data found for this combination.',
-                recommendations: 'Consult healthcare provider for guidance.'
-            });
-        }
-    });
-    
-    function getMechanismExplanation(mechanism, drugCat, foodCat) {
-        const explanations = {
-            'cyp3a4_inhibition': `Components in ${foodCat} inhibit CYP3A4 enzymes in the liver, which are responsible for metabolizing ${drugCat} medications. This can lead to increased drug levels in the blood.`,
-            'vitamin_k_competition': `${foodCat} contains vitamin K which opposes the blood-thinning effects of ${drugCat} medications by supporting clotting factor production.`,
-            'calcium_chelation': `Calcium in ${foodCat} binds to ${drugCat}, forming insoluble complexes that reduce drug absorption in the gastrointestinal tract.`,
-            'absorption_interference': `${foodCat} may delay or reduce the absorption of ${drugCat} by affecting gastric emptying or forming physical barriers in the GI tract.`,
-            'none': 'No known pharmacokinetic or pharmacodynamic interaction between these substances.'
-        };
-        
-        return explanations[mechanism] || 'Potential interaction through an unspecified mechanism.';
+    // Show alert message
+    function showAlert(message, type) {
+        $('#output').html(`
+            <div class="alert alert-${type}">
+                <i class="fas fa-${type === 'error' ? 'exclamation-triangle' : 'info-circle'}"></i>
+                <span>${message}</span>
+            </div>
+        `);
     }
-    
-    function getRecommendation(mechanism, risk) {
-        const recommendations = {
-            'HIGH': {
-                'cyp3a4_inhibition': 'Avoid consuming these together. Consider alternative medications or foods.',
-                'vitamin_k_competition': 'Maintain consistent vitamin K intake. Monitor INR closely and adjust warfarin dose as needed.',
-                'default': 'Avoid combination. Consult healthcare provider for alternatives.'
-            },
-            'MODERATE': {
-                'calcium_chelation': 'Take medication 2 hours before or 4 hours after consuming calcium-rich foods.',
-                'absorption_interference': 'Take medication on an empty stomach if possible, or at consistent times relative to meals.',
-                'default': 'Space administration times. Monitor for reduced efficacy or side effects.'
-            },
-            'LOW': {
-                'default': 'Minimal clinical significance. No special precautions required for most patients.'
-            }
-        };
-        
-        return recommendations[risk][mechanism] || recommendations[risk]['default'] || 'Monitor for any unexpected effects.';
-    }
-    
+
     // Display prediction results
     function displayPredictionResults(data) {
-        const outputDiv = $('#output');
-        
-        if (data.error) {
-            outputDiv.html(`
-                <div class="error-state">
-                    <i class="fas fa-exclamation-triangle"></i>
-                    <h3>Error Analyzing Interaction</h3>
-                    <p>${data.error}</p>
-                    <button class="btn-try-again">Try Again</button>
-                </div>
-            `);
-            return;
-        }
-        
         const riskClass = data.risk_level.toLowerCase();
         const mechanismText = data.mechanism.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
         
         let mechanismDetails = '';
-        if (data.mechanism !== 'none') {
+        if (data.mechanism !== 'unknown') {
             mechanismDetails = `
                 <div class="mechanism-details">
                     <h4><i class="fas fa-microscope"></i> Interaction Mechanism</h4>
@@ -310,29 +96,23 @@ def get_drug_food_data():
         }
         
         let similarInteractions = '';
-        if (data.interaction_predicted) {
+        if (data.similar_interactions && data.similar_interactions.length > 0) {
             similarInteractions = `
                 <div class="similar-interactions">
                     <h4><i class="fas fa-random"></i> Similar Interactions</h4>
                     <div class="similar-list">
-                        <div class="similar-item">
-                            <div class="similar-pair">Warfarin + Kale</div>
-                            <div class="similar-risk high-risk">High Risk</div>
-                        </div>
-                        <div class="similar-item">
-                            <div class="similar-pair">Simvastatin + Pomelo</div>
-                            <div class="similar-risk high-risk">High Risk</div>
-                        </div>
-                        <div class="similar-item">
-                            <div class="similar-pair">Tetracycline + Yogurt</div>
-                            <div class="similar-risk moderate-risk">Moderate Risk</div>
-                        </div>
+                        ${data.similar_interactions.map(interaction => `
+                            <div class="similar-item">
+                                <div class="similar-pair">${interaction.drug} + ${interaction.food}</div>
+                                <div class="similar-risk ${interaction.risk_level.toLowerCase()}-risk">${interaction.risk_level}</div>
+                            </div>
+                        `).join('')}
                     </div>
                 </div>
             `;
         }
         
-        outputDiv.html(`
+        $('#output').html(`
             <div class="prediction-header">
                 <div class="drug-food-pair">
                     <span class="drug-name">${data.drug}</span>
@@ -340,7 +120,7 @@ def get_drug_food_data():
                     <span class="food-name">${data.food}</span>
                 </div>
                 <div class="prediction-confidence">
-                    <span class="confidence-tag">${data.confidence} Confidence</span>
+                    <span class="confidence-tag">${Math.round(data.probability * 100)}% Confidence</span>
                 </div>
             </div>
             
@@ -355,29 +135,6 @@ def get_drug_food_data():
                         <h3>${data.interaction_predicted ? 'Interaction Detected' : 'No Significant Interaction'}</h3>
                         <p class="risk-category ${riskClass}-risk">${data.risk_level} Risk</p>
                     </div>
-                    <div class="risk-probability">
-                        <div class="probability-circle">
-                            <svg viewBox="0 0 36 36" class="circular-chart">
-                                <path class="circle-bg"
-                                    d="M18 2.0845
-                                    a 15.9155 15.9155 0 0 1 0 31.831
-                                    a 15.9155 15.9155 0 0 1 0 -31.831"
-                                />
-                                <path class="circle-fill"
-                                    stroke-dasharray="${Math.round(data.probability * 100)}, 100"
-                                    d="M18 2.0845
-                                    a 15.9155 15.9155 0 0 1 0 31.831
-                                    a 15.9155 15.9155 0 0 1 0 -31.831"
-                                />
-                                <text x="18" y="20.5" class="percentage">${Math.round(data.probability * 100)}%</text>
-                            </svg>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="category-tags">
-                    <span class="drug-category">${data.drug_category.replace(/_/g, ' ').toUpperCase()}</span>
-                    <span class="food-category">${data.food_category.replace(/_/g, ' ').toUpperCase()}</span>
                 </div>
                 
                 ${mechanismDetails}
@@ -396,27 +153,44 @@ def get_drug_food_data():
                     <button class="btn-generate-report">
                         <i class="fas fa-file-pdf"></i> Generate PDF Report
                     </button>
-                    <button class="btn-explain-more">
-                        <i class="fas fa-question-circle"></i> Explain More
-                    </button>
                 </div>
             </div>
         `);
         
         // Add event listeners for action buttons
         $('.btn-save-to-profile').click(function() {
-            alert('Please login to save this interaction to your profile.');
+            saveToProfile(data);
         });
         
         $('.btn-generate-report').click(function() {
-            alert('PDF report generation would be implemented here.');
-        });
-        
-        $('.btn-explain-more').click(function() {
-            alert('Detailed explanation would be shown here.');
+            generateReport(data);
         });
     }
-    
+
+    // Save to profile function
+    function saveToProfile(data) {
+        // In a real implementation, this would make an API call to save to user's profile
+        alert('This would save the interaction to your profile when logged in');
+    }
+
+    // Generate PDF report function
+    function generateReport(data) {
+        // In a real implementation, this would call your Flask endpoint to generate a PDF
+        alert('This would generate a PDF report when implemented');
+    }
+
+    // Clear form button
+    $('.btn-clear').click(function() {
+        $('#drug').val(null).trigger('change');
+        $('#food').val(null).trigger('change');
+        $('#output').html(`
+            <div class="results-placeholder">
+                <i class="fas fa-microscope"></i>
+                <p>Enter a drug and food combination to see interaction analysis</p>
+            </div>
+        `);
+    });
+
     // Login/Signup Modal Toggle
     $('.btn-login').click(function() {
         $('#loginModal').addClass('active');

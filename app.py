@@ -20,6 +20,59 @@ import random
 import logging
 from functools import wraps
 
+def categorize_entity(name, categories):
+    """Categorize a drug or food based on name"""
+    name_lower = name.lower()
+    for category, keywords in categories.items():
+        for keyword in keywords:
+            if keyword in name_lower:
+                return category
+    return 'other'
+
+def get_interaction_explanation(mechanism, drug_category, food_category):
+    """Get explanation for interaction mechanism"""
+    explanations = {
+        'cyp3a4_inhibition': (
+            f"Components in {food_category} inhibit CYP3A4 enzymes in the liver, which are "
+            f"responsible for metabolizing {drug_category} medications. This can lead to "
+            "increased drug levels in the blood."
+        ),
+        'vitamin_k_competition': (
+            f"{food_category} contains vitamin K which opposes the blood-thinning effects "
+            f"of {drug_category} medications by supporting clotting factor production."
+        ),
+        'calcium_chelation': (
+            f"Calcium in {food_category} binds to {drug_category}, forming insoluble "
+            "complexes that reduce drug absorption in the gastrointestinal tract."
+        ),
+        'absorption_interference': (
+            f"{food_category} may delay or reduce the absorption of {drug_category} by "
+            "affecting gastric emptying or forming physical barriers in the GI tract."
+        )
+    }
+    return explanations.get(mechanism, "Potential interaction through an unspecified mechanism.")
+
+def get_recommendations(mechanism, risk_level):
+    """Get recommendations based on mechanism and risk level"""
+    recommendations = {
+        'HIGH': {
+            'cyp3a4_inhibition': 'Avoid consuming these together. Consider alternative medications or foods.',
+            'vitamin_k_competition': 'Maintain consistent vitamin K intake. Monitor INR closely and adjust warfarin dose as needed.',
+            'default': 'Avoid combination. Consult healthcare provider for alternatives.'
+        },
+        'MODERATE': {
+            'calcium_chelation': 'Take medication 2 hours before or 4 hours after consuming calcium-rich foods.',
+            'absorption_interference': 'Take medication on an empty stomach if possible, or at consistent times relative to meals.',
+            'default': 'Space administration times. Monitor for reduced efficacy or side effects.'
+        },
+        'LOW': {
+            'default': 'Minimal clinical significance. No special precautions required for most patients.'
+        }
+    }
+    
+    risk_recs = recommendations.get(risk_level, {})
+    return risk_recs.get(mechanism, risk_recs.get('default', 'Monitor for any unexpected effects.'))
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -154,7 +207,7 @@ try:
             drug_categories[drug_cat].append(drug.lower())
             
         if food_cat not in food_categories:
-            food_categories[food_cat] = []
+            food_categories[f'food_cat'] = []
         if food.lower() not in [f.lower() for f in food_categories[food_cat]]:
             food_categories[food_cat].append(food.lower())
     
@@ -176,7 +229,7 @@ except Exception as e:
     all_foods = []
     drug_categories = {}
     food_categories = {}
-    high_risk_interactions = {}
+    high_risk_interactions = []
 
 # Load ML model
 try:
@@ -290,58 +343,6 @@ def predict_new_interaction_with_explanation(drug, food, model=None):
         'recommendations': "Monitor for any unexpected effects. Consult healthcare provider if concerned.",
         'known_interaction': False
     }
-def categorize_entity(name, categories):
-    """Categorize a drug or food based on name"""
-    name_lower = name.lower()
-    for category, keywords in categories.items():
-        for keyword in keywords:
-            if keyword in name_lower:
-                return category
-    return 'other'
-
-def get_interaction_explanation(mechanism, drug_category, food_category):
-    """Get explanation for interaction mechanism"""
-    explanations = {
-        'cyp3a4_inhibition': (
-            f"Components in {food_category} inhibit CYP3A4 enzymes in the liver, which are "
-            f"responsible for metabolizing {drug_category} medications. This can lead to "
-            "increased drug levels in the blood."
-        ),
-        'vitamin_k_competition': (
-            f"{food_category} contains vitamin K which opposes the blood-thinning effects "
-            f"of {drug_category} medications by supporting clotting factor production."
-        ),
-        'calcium_chelation': (
-            f"Calcium in {food_category} binds to {drug_category}, forming insoluble "
-            "complexes that reduce drug absorption in the gastrointestinal tract."
-        ),
-        'absorption_interference': (
-            f"{food_category} may delay or reduce the absorption of {drug_category} by "
-            "affecting gastric emptying or forming physical barriers in the GI tract."
-        )
-    }
-    return explanations.get(mechanism, "Potential interaction through an unspecified mechanism.")
-
-def get_recommendations(mechanism, risk_level):
-    """Get recommendations based on mechanism and risk level"""
-    recommendations = {
-        'HIGH': {
-            'cyp3a4_inhibition': 'Avoid consuming these together. Consider alternative medications or foods.',
-            'vitamin_k_competition': 'Maintain consistent vitamin K intake. Monitor INR closely and adjust warfarin dose as needed.',
-            'default': 'Avoid combination. Consult healthcare provider for alternatives.'
-        },
-        'MODERATE': {
-            'calcium_chelation': 'Take medication 2 hours before or 4 hours after consuming calcium-rich foods.',
-            'absorption_interference': 'Take medication on an empty stomach if possible, or at consistent times relative to meals.',
-            'default': 'Space administration times. Monitor for reduced efficacy or side effects.'
-        },
-        'LOW': {
-            'default': 'Minimal clinical significance. No special precautions required for most patients.'
-        }
-    }
-    
-    risk_recs = recommendations.get(risk_level, {})
-    return risk_recs.get(mechanism, risk_recs.get('default', 'Monitor for any unexpected effects.'))
 
 def check_meal_plan_compatibility(medications, meal_plan):
     """Check compatibility of medications with meal plan"""
@@ -370,6 +371,25 @@ def check_meal_plan_compatibility(medications, meal_plan):
         'interactions': interactions,
         'summary': f"Found {len(interactions)} potential interactions in your meal plan."
     }
+
+def get_similar_interactions(drug, food):
+    """Get similar known interactions for display"""
+    drug_category = categorize_entity(drug, drug_categories)
+    food_category = categorize_entity(food, food_categories)
+    
+    similar = []
+    for interaction in high_risk_interactions:
+        if (categorize_entity(interaction['drug'], drug_categories) == drug_category or
+            categorize_entity(interaction['food'], food_categories) == food_category):
+            similar.append({
+                'drug': interaction['drug'],
+                'food': interaction['food'],
+                'risk_level': interaction['risk_level']
+            })
+            if len(similar) >= 3:
+                break
+    
+    return similar
 
 # Routes
 @app.route('/')
@@ -448,25 +468,6 @@ def predict_interaction():
     prediction['similar_interactions'] = similar_interactions
     
     return prediction
-
-def get_similar_interactions(drug, food):
-    """Get similar known interactions for display"""
-    drug_category = categorize_entity(drug, drug_categories)
-    food_category = categorize_entity(food, food_categories)
-    
-    similar = []
-    for interaction in high_risk_interactions:
-        if (categorize_entity(interaction['drug'], drug_categories) == drug_category or
-            categorize_entity(interaction['food'], food_categories) == food_category):
-            similar.append({
-                'drug': interaction['drug'],
-                'food': interaction['food'],
-                'risk_level': interaction['risk_level']
-            })
-            if len(similar) >= 3:
-                break
-    
-    return similar
 
 @app.route('/api/auth/login', methods=['POST'])
 @json_response

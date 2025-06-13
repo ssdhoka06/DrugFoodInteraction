@@ -1,25 +1,37 @@
 $(document).ready(function() {
+    let drugFoodData = [];
+
+    // Load CSV data
+    async function loadCSVData() {
+        try {
+            const csvContent = await window.fs.readFile('/Users/sachidhoka/Desktop/balanced_drug_food_interactions.csv', { encoding: 'utf8' });
+            const parsedData = Papa.parse(csvContent, {
+                header: true,
+                skipEmptyLines: true,
+                dynamicTyping: true
+            });
+            drugFoodData = parsedData.data;
+            console.log('CSV data loaded:', drugFoodData.length, 'records');
+        } catch (error) {
+            console.error('Error loading CSV:', error);
+        }
+    }
+
+    // Call the function to load data
+    loadCSVData();
+
     // Initialize Select2 for drug search
     $('#drug').select2({
         placeholder: "Search for a medication...",
         allowClear: true,
-        ajax: {
-            url: '/search/drugs',
-            dataType: 'json',
-            delay: 250,
-            data: function(params) {
-                return {
-                    q: params.term
-                };
-            },
-            processResults: function(data) {
-                return {
-                    results: data
-                };
-            },
-            cache: true,
-            minimumInputLength: 2
-        },
+        data: function() {
+            const uniqueDrugs = [...new Set(drugFoodData.map(row => row.drug))];
+            return uniqueDrugs.map(drug => ({
+                id: drug,
+                text: drug,
+                category: drugFoodData.find(row => row.drug === drug)?.drug_category || ''
+            }));
+        }(),
         templateResult: formatDrugResult,
         templateSelection: formatDrugSelection
     });
@@ -28,23 +40,14 @@ $(document).ready(function() {
     $('#food').select2({
         placeholder: "Search for a food or supplement...",
         allowClear: true,
-        ajax: {
-            url: '/search/foods',
-            dataType: 'json',
-            delay: 250,
-            data: function(params) {
-                return {
-                    q: params.term
-                };
-            },
-            processResults: function(data) {
-                return {
-                    results: data
-                };
-            },
-            cache: true,
-            minimumInputLength: 2
-        },
+        data: function() {
+            const uniqueFoods = [...new Set(drugFoodData.map(row => row.food))];
+            return uniqueFoods.map(food => ({
+                id: food,
+                text: food,
+                category: drugFoodData.find(row => row.food === food)?.food_category || ''
+            }));
+        }(),
         templateResult: formatFoodResult,
         templateSelection: formatFoodSelection
     });
@@ -145,80 +148,41 @@ $(document).ready(function() {
             </div>
         `);
         
-        // Simulate API call (replace with actual AJAX call to your backend)
-        setTimeout(() => {
-            // This is a mock response - replace with actual API response
-            const mockResponse = generateMockPrediction(drugText, foodText);
-            displayPredictionResults(mockResponse);
-        }, 1500);
-    });
-    
-    // Generate mock prediction data (replace with actual API call)
-    function generateMockPrediction(drug, food) {
-        const riskLevels = ['HIGH', 'MODERATE', 'LOW'];
-        const mechanisms = [
-            'cyp3a4_inhibition',
-            'vitamin_k_competition',
-            'calcium_chelation',
-            'absorption_interference',
-            'none'
-        ];
-        
-        const drugCategory = drug.toLowerCase().includes('warfarin') ? 'anticoagulant' : 
-                            drug.toLowerCase().includes('statin') ? 'statin' : 
-                            drug.toLowerCase().includes('antibiotic') ? 'antibiotic' : 
-                            'other';
-        
-        const foodCategory = food.toLowerCase().includes('grapefruit') ? 'citrus' : 
-                            food.toLowerCase().includes('spinach') ? 'leafy_greens' : 
-                            food.toLowerCase().includes('milk') ? 'dairy' : 
-                            'other';
-        
-        // Special cases for known interactions
-        if ((drugCategory === 'anticoagulant' && foodCategory === 'leafy_greens') ||
-            (drugCategory === 'statin' && foodCategory === 'citrus')) {
-            return {
-                drug: drug,
-                food: food,
-                interaction_predicted: true,
-                probability: 0.95,
-                drug_category: drugCategory,
-                food_category: foodCategory,
-                mechanism: drugCategory === 'anticoagulant' ? 'vitamin_k_competition' : 'cyp3a4_inhibition',
-                risk_level: 'HIGH',
+        // Find actual interaction data instead of mock response
+        const actualInteraction = drugFoodData.find(row => 
+            row.drug === drugText && row.food === foodText
+        );
+
+        if (actualInteraction) {
+            displayPredictionResults({
+                drug: actualInteraction.drug,
+                food: actualInteraction.food,
+                interaction_predicted: actualInteraction.interaction === 1 || actualInteraction.interaction === true,
+                probability: actualInteraction.interaction === 1 ? 0.95 : 0.05,
+                drug_category: actualInteraction.drug_category,
+                food_category: actualInteraction.food_category,
+                mechanism: actualInteraction.mechanism,
+                risk_level: actualInteraction.risk_level,
                 confidence: 'High',
-                explanation: drugCategory === 'anticoagulant' ? 
-                    'Vitamin K in leafy greens can reduce the effectiveness of anticoagulants like warfarin.' : 
-                    'Grapefruit inhibits CYP3A4 enzymes, increasing statin levels in the blood.',
-                recommendations: drugCategory === 'anticoagulant' ? 
-                    'Maintain consistent vitamin K intake and monitor INR regularly.' : 
-                    'Avoid grapefruit products completely while taking this medication.'
-            };
+                explanation: getMechanismExplanation(actualInteraction.mechanism, actualInteraction.drug_category, actualInteraction.food_category),
+                recommendations: getRecommendation(actualInteraction.mechanism, actualInteraction.risk_level)
+            });
+        } else {
+            displayPredictionResults({
+                drug: drugText,
+                food: foodText,
+                interaction_predicted: false,
+                probability: 0.05,
+                drug_category: 'unknown',
+                food_category: 'unknown',
+                mechanism: 'none',
+                risk_level: 'LOW',
+                confidence: 'Low',
+                explanation: 'No interaction data found for this combination.',
+                recommendations: 'Consult healthcare provider for guidance.'
+            });
         }
-        
-        // Random generation for other cases
-        const interaction = Math.random() > 0.7;
-        const mechanism = interaction ? mechanisms[Math.floor(Math.random() * (mechanisms.length - 1))] : 'none';
-        const risk = interaction ? riskLevels[Math.floor(Math.random() * riskLevels.length)] : 'LOW';
-        
-        return {
-            drug: drug,
-            food: food,
-            interaction_predicted: interaction,
-            probability: interaction ? (0.6 + Math.random() * 0.4) : Math.random() * 0.4,
-            drug_category: drugCategory,
-            food_category: foodCategory,
-            mechanism: mechanism,
-            risk_level: risk,
-            confidence: interaction ? (Math.random() > 0.5 ? 'High' : 'Medium') : 'High',
-            explanation: interaction ? 
-                getMechanismExplanation(mechanism, drugCategory, foodCategory) : 
-                'No significant interaction expected between these substances.',
-            recommendations: interaction ? 
-                getRecommendation(mechanism, risk) : 
-                'No special precautions needed.'
-        };
-    }
+    });
     
     function getMechanismExplanation(mechanism, drugCat, foodCat) {
         const explanations = {

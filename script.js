@@ -1,24 +1,87 @@
 $(document).ready(function() {
     let drugFoodData = [];
 
-    // Load CSV data
+    # Add this to your Flask app.py file
+
+@app.route('/api/drug-food-data')
+def get_drug_food_data():
+    try:
+        # Load your CSV data here
+        import pandas as pd
+        df = pd.read_csv('dfi project/data/balanced_drug_food_interactions.csv')
+        
+        # Convert to JSON format
+        data = df.to_dict('records')
+        
+        return jsonify({
+            'success': True,
+            'data': data,
+            'count': len(data)
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
     async function loadCSVData() {
         try {
-            const csvContent = await window.fs.readFile('dfi project/data/balanced_drug_food_interactions.csv', { encoding: 'utf8' });
-            const parsedData = Papa.parse(csvContent, {
-                header: true,
-                skipEmptyLines: true,
-                dynamicTyping: true
-            });
-            drugFoodData = parsedData.data;
-            console.log('CSV data loaded:', drugFoodData.length, 'records');
+            const response = await fetch('/api/drug-food-data');
+            const result = await response.json();
+            
+            if (result.success) {
+                drugFoodData = result.data;
+                console.log('CSV data loaded:', drugFoodData.length, 'records');
+                
+                // Initialize Select2 dropdowns after data is loaded
+                initializeSelect2();
+            } else {
+                console.error('Error loading CSV:', result.error);
+            }
         } catch (error) {
             console.error('Error loading CSV:', error);
         }
     }
 
+    // Initialize Select2 dropdowns
+    function initializeSelect2() {
+        // Initialize Select2 for drug search
+        $('#drug').select2({
+            placeholder: "Search for a medication...",
+            allowClear: true,
+            data: function() {
+                const uniqueDrugs = [...new Set(drugFoodData.map(row => row.drug))];
+                return uniqueDrugs.map(drug => ({
+                    id: drug,
+                    text: drug,
+                    category: drugFoodData.find(row => row.drug === drug)?.drug_category || ''
+                }));
+            }(),
+            templateResult: formatDrugResult,
+            templateSelection: formatDrugSelection
+        });
+
+        // Initialize Select2 for food search
+        $('#food').select2({
+            placeholder: "Search for a food or supplement...",
+            allowClear: true,
+            data: function() {
+                const uniqueFoods = [...new Set(drugFoodData.map(row => row.food))];
+                return uniqueFoods.map(food => ({
+                    id: food,
+                    text: food,
+                    category: drugFoodData.find(row => row.food === food)?.food_category || ''
+                }));
+            }(),
+            templateResult: formatFoodResult,
+            templateSelection: formatFoodSelection
+        });
+    }
+
     // Call the function to load data
     loadCSVData();
+
+
+});
 
     // Initialize Select2 for drug search
     $('#drug').select2({

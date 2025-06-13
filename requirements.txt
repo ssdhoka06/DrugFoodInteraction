@@ -4,3 +4,10 @@ numpy
 matplotlib
 seaborn
 scikit-learn
+networkx
+scipy
+lightgbm
+catboost
+xgboost
+shap
+lime

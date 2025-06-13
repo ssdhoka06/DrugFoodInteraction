@@ -1,4 +1,3 @@
-
 from flask import Flask, request, jsonify, render_template, session, send_file, url_for
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from flask_cors import CORS
@@ -12,15 +11,11 @@ from werkzeug.security import generate_password_hash, check_password_hash
 import sqlite3
 import requests
 from io import BytesIO
-# Commenting out PDF libraries that might not be installed
-# from reportlab.lib.pagesizes import letter
-# from reportlab.pdfgen import canvas
-# from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-# from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Image
-# from reportlab.lib import colors
 import random
 import logging
 from functools import wraps
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics.pairwise import cosine_similarity
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -137,10 +132,18 @@ os.makedirs(MODELS_DIR, exist_ok=True)
 
 # Try multiple possible paths for the data file
 DATA_PATHS = [
-    os.path.join(DATA_DIR, 'balanced_drug_food_interactions.csv'),  # Relative path
-    '/Users/sachidhoka/Desktop/ASEP_2(Drug-Food)/dfi project/data/balanced_drug_food_interactions.csv',  # Your actual path
-    '/Users/sachidhoka/Desktop/balanced_drug_food_interactions.csv',  # Alternative path
-    os.path.join('dfi project', 'data', 'balanced_drug_food_interactions.csv')  # Alternative relative path
+    os.path.join(DATA_DIR, 'balanced_drug_food_interactions.csv'),
+    os.path.join('dfi project', 'data', 'balanced_drug_food_interactions.csv'),
+    'data/balanced_drug_food_interactions.csv',
+    'balanced_drug_food_interactions.csv'
+]
+
+# Try multiple possible paths for the ML model
+MODEL_PATHS = [
+    os.path.join(MODELS_DIR, 'best_drug_food_interaction_model.pkl'),
+    os.path.join('dfi project', 'models', 'best_drug_food_interaction_model.pkl'),
+    'models/best_drug_food_interaction_model.pkl',
+    'best_drug_food_interaction_model.pkl'
 ]
 
 # Load and cache data
@@ -151,6 +154,7 @@ drug_categories = {}
 food_categories = {}
 high_risk_interactions = []
 
+# Load dataset
 for data_path in DATA_PATHS:
     try:
         logger.info(f"Trying to load data from: {data_path}")
@@ -170,9 +174,9 @@ for data_path in DATA_PATHS:
         drug_categories = {}
         food_categories = {}
         
-        # Create category mappings from your dataset - LIMIT THIS TO AVOID INFINITE LOOP
-        logger.info("Processing categories (this may take a moment)...")
-        for idx, row in df.head(10000).iterrows():  # LIMIT TO FIRST 10K ROWS
+        # Create category mappings from your dataset
+        logger.info("Processing categories...")
+        for idx, row in df.head(10000).iterrows():
             drug = row['drug']
             food = row['food']
             drug_cat = row['drug_category'] if 'drug_category' in df.columns and pd.notna(row['drug_category']) else 'other'
@@ -180,17 +184,17 @@ for data_path in DATA_PATHS:
             
             if drug_cat not in drug_categories:
                 drug_categories[drug_cat] = []
-            if drug.lower() not in [d.lower() for d in drug_categories[drug_cat]] and len(drug_categories[drug_cat]) < 100:  # LIMIT LIST SIZE
+            if drug.lower() not in [d.lower() for d in drug_categories[drug_cat]] and len(drug_categories[drug_cat]) < 100:
                 drug_categories[drug_cat].append(drug.lower())
                 
             if food_cat not in food_categories:
                 food_categories[food_cat] = []
-            if food.lower() not in [f.lower() for f in food_categories[food_cat]] and len(food_categories[food_cat]) < 100:  # LIMIT LIST SIZE
+            if food.lower() not in [f.lower() for f in food_categories[food_cat]] and len(food_categories[food_cat]) < 100:
                 food_categories[food_cat].append(food.lower())
         
-        # Extract high risk interactions from dataset - LIMIT THIS TOO
+        # Extract high risk interactions from dataset
         if 'risk_level' in df.columns:
-            high_risk_data = df[df['risk_level'] == 'HIGH'].head(100)  # LIMIT TO 100 HIGH RISK
+            high_risk_data = df[df['risk_level'] == 'HIGH'].head(100)
             for _, row in high_risk_data.iterrows():
                 high_risk_interactions.append({
                     'drug': row['drug'],
@@ -202,7 +206,7 @@ for data_path in DATA_PATHS:
                 })
         
         logger.info(f"Data processed successfully: {len(all_drugs)} drugs, {len(all_foods)} foods")
-        break  # Stop if we successfully loaded the data
+        break
         
     except FileNotFoundError:
         logger.warning(f"CSV file not found at {data_path}")
@@ -213,18 +217,110 @@ for data_path in DATA_PATHS:
 
 if df is None:
     logger.error("Could not load data from any of the specified paths. Using mock data.")
-    # Add some mock data so the app can still run
     all_drugs = ['aspirin', 'warfarin', 'atorvastatin', 'metformin', 'lisinopril']
     all_foods = ['grapefruit', 'spinach', 'milk', 'coffee', 'alcohol']
     drug_categories = {'cardiovascular': ['aspirin', 'warfarin', 'atorvastatin', 'lisinopril'], 'diabetes': ['metformin']}
     food_categories = {'citrus': ['grapefruit'], 'leafy_greens': ['spinach'], 'dairy': ['milk'], 'beverages': ['coffee', 'alcohol']}
     high_risk_interactions = []
 
-# Load ML model (commented out to avoid issues)
+# Load ML model
 best_model = None
 feature_info = {'feature_names': []}
 scaler = None
-logger.info("Using mock predictions (ML model not loaded)")
+
+for model_path in MODEL_PATHS:
+    try:
+        logger.info(f"Trying to load ML model from: {model_path}")
+        with open(model_path, 'rb') as f:
+            model_data = pickle.load(f)
+        
+        # Handle different pickle formats
+        if isinstance(model_data, dict):
+            best_model = model_data.get('model')
+            feature_info = model_data.get('feature_info', {'feature_names': []})
+            scaler = model_data.get('scaler')
+        else:
+            best_model = model_data
+            
+        logger.info(f"ML model loaded successfully from {model_path}")
+        logger.info(f"Model type: {type(best_model)}")
+        
+        if hasattr(best_model, 'feature_names_in_'):
+            feature_info['feature_names'] = list(best_model.feature_names_in_)
+        elif 'feature_names' in feature_info:
+            logger.info(f"Feature names: {len(feature_info['feature_names'])} features")
+        
+        break
+        
+    except FileNotFoundError:
+        logger.warning(f"Model file not found at {model_path}")
+        continue
+    except Exception as e:
+        logger.error(f"Error loading model file at {model_path}: {str(e)}")
+        continue
+
+if best_model is None:
+    logger.error("Could not load ML model from any of the specified paths. Using mock predictions.")
+
+def create_feature_vector(drug, food):
+    """Create feature vector for ML model prediction"""
+    if df is None or best_model is None:
+        return np.array([])
+    
+    try:
+        # Basic features
+        features = []
+        
+        # Drug and food name features (simple encoding)
+        drug_lower = drug.lower().strip()
+        food_lower = food.lower().strip()
+        
+        # One-hot encoding for common drugs and foods
+        common_drugs = all_drugs[:50] if len(all_drugs) > 50 else all_drugs
+        common_foods = all_foods[:50] if len(all_foods) > 50 else all_foods
+        
+        # Drug features
+        for d in common_drugs:
+            features.append(1 if d == drug_lower else 0)
+        
+        # Food features
+        for f in common_foods:
+            features.append(1 if f == food_lower else 0)
+        
+        # Category features
+        drug_cat = categorize_entity(drug, drug_categories)
+        food_cat = categorize_entity(food, food_categories)
+        
+        all_drug_cats = list(drug_categories.keys())
+        all_food_cats = list(food_categories.keys())
+        
+        # Drug category features
+        for cat in all_drug_cats:
+            features.append(1 if cat == drug_cat else 0)
+        
+        # Food category features
+        for cat in all_food_cats:
+            features.append(1 if cat == food_cat else 0)
+        
+        # Additional features
+        features.extend([
+            len(drug),  # Drug name length
+            len(food),  # Food name length
+            1 if any(keyword in drug_lower for keyword in ['anti', 'inhibitor', 'blocker']) else 0,
+            1 if any(keyword in food_lower for keyword in ['citrus', 'dairy', 'leafy']) else 0
+        ])
+        
+        feature_array = np.array(features).reshape(1, -1)
+        
+        # Apply scaler if available
+        if scaler is not None:
+            feature_array = scaler.transform(feature_array)
+        
+        return feature_array
+        
+    except Exception as e:
+        logger.error(f"Error creating feature vector: {str(e)}")
+        return np.array([])
 
 def categorize_entity(name, categories):
     """Categorize a drug or food based on name"""
@@ -282,62 +378,102 @@ def get_recommendations(mechanism, risk_level):
 def predict_new_interaction_with_explanation(drug, food, model=None):
     """Predict interaction between drug and food with explanation"""
     
-    if df is None:
-        # Mock prediction when no data is available
-        return {
-            'drug': drug,
-            'food': food,
-            'interaction_predicted': True,
-            'probability': 0.6,
-            'risk_level': 'MODERATE',
-            'mechanism': 'unknown',
-            'explanation': f"Mock prediction for {drug} and {food}. Real data not loaded.",
-            'recommendations': "This is a test prediction. Consult healthcare provider for real advice.",
-            'known_interaction': False
-        }
-    
-    # First, check your dataset for exact matches
+    # First, check dataset for exact matches
     drug_lower = drug.lower().strip()
     food_lower = food.lower().strip()
     
-    # Look for exact match in dataset
-    dataset_match = df[
-        (df['drug'].str.lower().str.strip() == drug_lower) & 
-        (df['food'].str.lower().str.strip() == food_lower)
-    ]
-    
-    if not dataset_match.empty:
-        # Use data from your dataset
-        row = dataset_match.iloc[0]
-        interaction = bool(row['interaction']) if 'interaction' in df.columns and pd.notna(row['interaction']) else False
+    if df is not None:
+        dataset_match = df[
+            (df['drug'].str.lower().str.strip() == drug_lower) & 
+            (df['food'].str.lower().str.strip() == food_lower)
+        ]
         
-        # Convert risk level to probability
-        risk_level = row['risk_level'] if 'risk_level' in df.columns and pd.notna(row['risk_level']) else 'LOW'
-        if risk_level == 'HIGH':
-            probability = 0.9
-        elif risk_level == 'MODERATE':
-            probability = 0.7
-        else:
-            probability = 0.3
+        if not dataset_match.empty:
+            # Use data from dataset
+            row = dataset_match.iloc[0]
+            interaction = bool(row['interaction']) if 'interaction' in df.columns and pd.notna(row['interaction']) else False
             
-        mechanism = row['mechanism'] if 'mechanism' in df.columns and pd.notna(row['mechanism']) else 'unknown'
-        drug_category = row['drug_category'] if 'drug_category' in df.columns and pd.notna(row['drug_category']) else 'other'
-        food_category = row['food_category'] if 'food_category' in df.columns and pd.notna(row['food_category']) else 'other'
-        
-        explanation = get_interaction_explanation(mechanism, drug_category, food_category)
-        recommendations = get_recommendations(mechanism, risk_level)
-        
-        return {
-            'drug': drug,
-            'food': food,
-            'interaction_predicted': interaction,
-            'probability': probability,
-            'risk_level': risk_level,
-            'mechanism': mechanism,
-            'explanation': explanation,
-            'recommendations': recommendations,
-            'known_interaction': True
-        }
+            risk_level = row['risk_level'] if 'risk_level' in df.columns and pd.notna(row['risk_level']) else 'LOW'
+            if risk_level == 'HIGH':
+                probability = 0.9
+            elif risk_level == 'MODERATE':
+                probability = 0.7
+            else:
+                probability = 0.3
+                
+            mechanism = row['mechanism'] if 'mechanism' in df.columns and pd.notna(row['mechanism']) else 'unknown'
+            drug_category = row['drug_category'] if 'drug_category' in df.columns and pd.notna(row['drug_category']) else 'other'
+            food_category = row['food_category'] if 'food_category' in df.columns and pd.notna(row['food_category']) else 'other'
+            
+            explanation = get_interaction_explanation(mechanism, drug_category, food_category)
+            recommendations = get_recommendations(mechanism, risk_level)
+            
+            return {
+                'drug': drug,
+                'food': food,
+                'interaction_predicted': interaction,
+                'probability': probability,
+                'risk_level': risk_level,
+                'mechanism': mechanism,
+                'explanation': explanation,
+                'recommendations': recommendations,
+                'known_interaction': True
+            }
+    
+    # Use ML model for prediction if available
+    if best_model is not None:
+        try:
+            feature_vector = create_feature_vector(drug, food)
+            
+            if feature_vector.size > 0:
+                # Make prediction
+                if hasattr(best_model, 'predict_proba'):
+                    probabilities = best_model.predict_proba(feature_vector)[0]
+                    interaction_prob = probabilities[1] if len(probabilities) > 1 else probabilities[0]
+                else:
+                    prediction = best_model.predict(feature_vector)[0]
+                    interaction_prob = prediction if isinstance(prediction, float) else 0.5
+                
+                interaction_predicted = interaction_prob > 0.5
+                
+                # Determine risk level based on probability
+                if interaction_prob > 0.8:
+                    risk_level = 'HIGH'
+                elif interaction_prob > 0.6:
+                    risk_level = 'MODERATE'
+                else:
+                    risk_level = 'LOW'
+                
+                # Categorize for explanation
+                drug_category = categorize_entity(drug, drug_categories)
+                food_category = categorize_entity(food, food_categories)
+                
+                # Determine likely mechanism based on categories
+                if 'citrus' in food_category.lower() or 'grapefruit' in food_lower:
+                    mechanism = 'cyp3a4_inhibition'
+                elif 'leafy' in food_category.lower() or 'vitamin' in food_lower:
+                    mechanism = 'vitamin_k_competition'
+                elif 'dairy' in food_category.lower() or 'calcium' in food_lower:
+                    mechanism = 'calcium_chelation'
+                else:
+                    mechanism = 'absorption_interference'
+                
+                explanation = get_interaction_explanation(mechanism, drug_category, food_category)
+                recommendations = get_recommendations(mechanism, risk_level)
+                
+                return {
+                    'drug': drug,
+                    'food': food,
+                    'interaction_predicted': interaction_predicted,
+                    'probability': round(interaction_prob, 3),
+                    'risk_level': risk_level,
+                    'mechanism': mechanism,
+                    'explanation': explanation,
+                    'recommendations': recommendations,
+                    'known_interaction': False
+                }
+        except Exception as e:
+            logger.error(f"Error in ML model prediction: {str(e)}")
     
     # Fallback: no interaction found
     return {
@@ -374,10 +510,17 @@ def get_similar_interactions(drug, food):
 # Routes
 @app.route('/')
 def home():
+    """Serve the main frontend page"""
+    return render_template('index.html')
+
+@app.route('/api/status')
+def status():
+    """API status endpoint"""
     return jsonify({
         'status': 'running',
         'message': 'Drug-Food Interaction API is running!',
         'data_loaded': df is not None,
+        'model_loaded': best_model is not None,
         'drugs_count': len(all_drugs),
         'foods_count': len(all_foods),
         'sample_drugs': all_drugs[:10],
@@ -400,6 +543,21 @@ def predict_interaction():
         # Get similar interactions for the frontend
         similar_interactions = get_similar_interactions(drug, food)
         prediction['similar_interactions'] = similar_interactions
+        
+        # Save prediction to database if user is logged in
+        if current_user.is_authenticated:
+            try:
+                with get_db() as db:
+                    db.execute('''INSERT INTO predictions 
+                                 (user_id, drug, food, interaction_predicted, probability, 
+                                  risk_level, mechanism, explanation, recommendations)
+                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+                              (current_user.id, drug, food, prediction['interaction_predicted'],
+                               prediction['probability'], prediction['risk_level'],
+                               prediction['mechanism'], prediction['explanation'],
+                               prediction['recommendations']))
+            except Exception as e:
+                logger.error(f"Error saving prediction to database: {str(e)}")
         
         return jsonify({'success': True, 'data': prediction})
     except Exception as e:
@@ -434,39 +592,110 @@ def get_foods():
 def test():
     return jsonify({'message': 'API is working', 'timestamp': datetime.now().isoformat()})
 
-# Commented out the research articles update function that was causing the hang
-def update_research_articles():
-    """Update research articles from news API"""
+# Authentication routes
+@app.route('/api/register', methods=['POST'])
+def register():
     try:
-        # Add timeout and better error handling
-        response = requests.get(
-            'https://newsapi.org/v2/everything',
-            params={
-                'q': 'drug food interaction OR pharmacokinetics OR drug metabolism',
-                'apiKey': os.environ.get('NEWS_API_KEY'),
-                'language': 'en',
-                'sortBy': 'publishedAt',
-                'pageSize': 20
-            },
-            timeout=10  # Add timeout
-        )
+        data = request.get_json()
+        name = data.get('name')
+        email = data.get('email')
+        password = data.get('password')
         
-        if response.status_code == 200:
-            articles = response.json().get('articles', [])
-            logger.info(f"Successfully fetched {len(articles)} articles")
-            # Process articles here...
-        else:
-            logger.warning(f"NewsAPI returned status code: {response.status_code}")
-    except requests.exceptions.Timeout:
-        logger.error("NewsAPI request timed out")
+        if not name or not email or not password:
+            return jsonify({'success': False, 'error': 'All fields are required'}), 400
+        
+        password_hash = generate_password_hash(password)
+        
+        with get_db() as db:
+            try:
+                db.execute('INSERT INTO users (name, email, password) VALUES (?, ?, ?)',
+                          (name, email, password_hash))
+                return jsonify({'success': True, 'message': 'User registered successfully'})
+            except sqlite3.IntegrityError:
+                return jsonify({'success': False, 'error': 'Email already exists'}), 400
+                
     except Exception as e:
-        logger.error(f"Error updating research articles: {str(e)}")
+        logger.error(f"Error in register: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/login', methods=['POST'])
+def login():
+    try:
+        data = request.get_json()
+        email = data.get('email')
+        password = data.get('password')
+        
+        if not email or not password:
+            return jsonify({'success': False, 'error': 'Email and password are required'}), 400
+        
+        with get_db() as db:
+            user = db.execute('SELECT id, name, email, password FROM users WHERE email = ?', 
+                            (email,)).fetchone()
+            
+            if user and check_password_hash(user['password'], password):
+                user_obj = User(user['id'], user['name'], user['email'])
+                login_user(user_obj)
+                return jsonify({'success': True, 'user': {'id': user['id'], 'name': user['name'], 'email': user['email']}})
+            else:
+                return jsonify({'success': False, 'error': 'Invalid email or password'}), 401
+                
+    except Exception as e:
+        logger.error(f"Error in login: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/logout', methods=['POST'])
+@login_required
+def logout():
+    logout_user()
+    return jsonify({'success': True, 'message': 'Logged out successfully'})
+
+@app.route('/api/user')
+@login_required
+def get_user():
+    return jsonify({
+        'success': True, 
+        'user': {
+            'id': current_user.id, 
+            'name': current_user.name, 
+            'email': current_user.email
+        }
+    })
+
+@app.route('/api/predictions')
+@login_required
+def get_user_predictions():
+    try:
+        with get_db() as db:
+            predictions = db.execute('''SELECT * FROM predictions 
+                                      WHERE user_id = ? 
+                                      ORDER BY timestamp DESC LIMIT 50''', 
+                                   (current_user.id,)).fetchall()
+            
+            predictions_list = []
+            for pred in predictions:
+                predictions_list.append({
+                    'id': pred['id'],
+                    'drug': pred['drug'],
+                    'food': pred['food'],
+                    'interaction_predicted': pred['interaction_predicted'],
+                    'probability': pred['probability'],
+                    'risk_level': pred['risk_level'],
+                    'mechanism': pred['mechanism'],
+                    'explanation': pred['explanation'],
+                    'recommendations': pred['recommendations'],
+                    'timestamp': pred['timestamp']
+                })
+            
+            return jsonify({'success': True, 'predictions': predictions_list})
+    except Exception as e:
+        logger.error(f"Error getting user predictions: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 if __name__ == '__main__':
     logger.info("Starting Flask application...")
+    logger.info(f"Data loaded: {df is not None}")
+    logger.info(f"Model loaded: {best_model is not None}")
+    logger.info(f"Available drugs: {len(all_drugs)}")
+    logger.info(f"Available foods: {len(all_foods)}")
     
-    # COMMENTED OUT THE BLOCKING CALL THAT WAS CAUSING THE HANG
-    # update_research_articles()
-    
-    logger.info("Flask app ready to start...")
     app.run(debug=True, host='0.0.0.0', port=5001)

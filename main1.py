@@ -379,26 +379,26 @@ def main():
         3. Update `MODEL_FILE_ID` in the code
         """)
 
-# Instructions for setup
-if voting_clf is None:
-    st.sidebar.markdown("---")
-    st.sidebar.markdown("### 📋 Setup Instructions")
-    st.sidebar.markdown("""
-    **To complete setup:**
-    
-    1. **Save your model:**
-    ```python
-    import pickle
-    with open('voting_classifier_model.pkl', 'wb') as f:
-        pickle.dump(voting_clf, f)
-    ```
-    
-    2. **Upload to Google Drive**
-    
-    3. **Get file ID** from share link
-    
-    4. **Update MODEL_FILE_ID** in code
-    """)
+    # Instructions for setup (moved inside main function)
+    if voting_clf is None:
+        st.sidebar.markdown("---")
+        st.sidebar.markdown("### 📋 Setup Instructions")
+        st.sidebar.markdown("""
+        **To complete setup:**
+        
+        1. **Save your model:**
+        ```python
+        import pickle
+        with open('voting_classifier_model.pkl', 'wb') as f:
+            pickle.dump(voting_clf, f)
+        ```
+        
+        2. **Upload to Google Drive**
+        
+        3. **Get file ID** from share link
+        
+        4. **Update MODEL_FILE_ID** in code
+        """)
 
 if __name__ == "__main__":
     main()

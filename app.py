@@ -133,20 +133,43 @@ MODELS_DIR = os.path.join(os.path.dirname(__file__), 'models')
 
 # Load and cache data
 try:
-    df = pd.read_csv(os.path.join(DATA_DIR, 'balanced_drug_food_interactions.csv'))
+    df = pd.read_csv('/Users/sachidhoka/Desktop/balanced_drug_food_interactions.csv')
     all_drugs = sorted(set(df['drug'].dropna().str.strip()))
     all_foods = sorted(set(df['food'].dropna().str.strip()))
     
-    # Load drug and food categories
-    with open(os.path.join(DATA_DIR, 'drug_categories.json')) as f:
-        drug_categories = json.load(f)
+    # Extract categories from dataset
+    drug_categories = {}
+    food_categories = {}
     
-    with open(os.path.join(DATA_DIR, 'food_categories.json')) as f:
-        food_categories = json.load(f)
+    # Create category mappings from your dataset
+    for _, row in df.iterrows():
+        drug = row['drug']
+        food = row['food']
+        drug_cat = row['drug_category'] if pd.notna(row['drug_category']) else 'other'
+        food_cat = row['food_category'] if pd.notna(row['food_category']) else 'other'
+        
+        if drug_cat not in drug_categories:
+            drug_categories[drug_cat] = []
+        if drug.lower() not in [d.lower() for d in drug_categories[drug_cat]]:
+            drug_categories[drug_cat].append(drug.lower())
+            
+        if food_cat not in food_categories:
+            food_categories[food_cat] = []
+        if food.lower() not in [f.lower() for f in food_categories[food_cat]]:
+            food_categories[food_cat].append(food.lower())
     
-    # Load high risk interactions
-    with open(os.path.join(DATA_DIR, 'high_risk_interactions.json')) as f:
-        high_risk_interactions = json.load(f)
+    # Extract high risk interactions from dataset
+    high_risk_interactions = []
+    high_risk_data = df[df['risk_level'] == 'HIGH']
+    for _, row in high_risk_data.iterrows():
+        high_risk_interactions.append({
+            'drug': row['drug'],
+            'food': row['food'],
+            'mechanism': row['mechanism'] if pd.notna(row['mechanism']) else 'unknown',
+            'explanation': f"High risk interaction between {row['drug']} and {row['food']}",
+            'recommendations': get_recommendations(row['mechanism'] if pd.notna(row['mechanism']) else 'unknown', 'HIGH'),
+            'risk_level': 'HIGH'
+        })
 except Exception as e:
     logger.error(f"Error loading data files: {str(e)}")
     all_drugs = []
@@ -172,75 +195,101 @@ except Exception as e:
 # Mock ML functions for demonstration
 def predict_new_interaction_with_explanation(drug, food, model=None):
     """Predict interaction between drug and food with explanation"""
-    # Check for known high-risk interactions first
-    drug_lower = drug.lower()
-    food_lower = food.lower()
     
-    for interaction in high_risk_interactions:
-        if (drug_lower in interaction['drug'].lower() and 
-            food_lower in interaction['food'].lower()):
+    # First, check your dataset for exact matches
+    drug_lower = drug.lower().strip()
+    food_lower = food.lower().strip()
+    
+    # Look for exact match in dataset
+    dataset_match = df[
+        (df['drug'].str.lower().str.strip() == drug_lower) & 
+        (df['food'].str.lower().str.strip() == food_lower)
+    ]
+    
+    if not dataset_match.empty:
+        # Use data from your dataset
+        row = dataset_match.iloc[0]
+        interaction = bool(row['interaction']) if pd.notna(row['interaction']) else False
+        
+        # Convert risk level to probability
+        risk_level = row['risk_level'] if pd.notna(row['risk_level']) else 'LOW'
+        if risk_level == 'HIGH':
+            probability = 0.9
+        elif risk_level == 'MODERATE':
+            probability = 0.7
+        else:
+            probability = 0.3
+            
+        mechanism = row['mechanism'] if pd.notna(row['mechanism']) else 'unknown'
+        drug_category = row['drug_category'] if pd.notna(row['drug_category']) else 'other'
+        food_category = row['food_category'] if pd.notna(row['food_category']) else 'other'
+        
+        explanation = get_interaction_explanation(mechanism, drug_category, food_category)
+        recommendations = get_recommendations(mechanism, risk_level)
+        
+        return {
+            'drug': drug,
+            'food': food,
+            'interaction_predicted': interaction,
+            'probability': probability,
+            'risk_level': risk_level,
+            'mechanism': mechanism,
+            'explanation': explanation,
+            'recommendations': recommendations,
+            'known_interaction': True
+        }
+    
+    # If no exact match found, check for partial matches by category
+    drug_matches = df[df['drug'].str.lower().str.contains(drug_lower, na=False)]
+    food_matches = df[df['food'].str.lower().str.contains(food_lower, na=False)]
+    
+    if not drug_matches.empty and not food_matches.empty:
+        # Get most common drug and food categories for this input
+        drug_category = drug_matches['drug_category'].mode().iloc[0] if not drug_matches['drug_category'].mode().empty else 'other'
+        food_category = food_matches['food_category'].mode().iloc[0] if not food_matches['food_category'].mode().empty else 'other'
+        
+        # Look for interactions between these categories
+        category_matches = df[
+            (df['drug_category'] == drug_category) & 
+            (df['food_category'] == food_category) &
+            (df['interaction'] == True)
+        ]
+        
+        if not category_matches.empty:
+            # Use the most common interaction pattern for this category combination
+            row = category_matches.iloc[0]
+            risk_level = row['risk_level'] if pd.notna(row['risk_level']) else 'MODERATE'
+            mechanism = row['mechanism'] if pd.notna(row['mechanism']) else 'unknown'
+            
+            probability = 0.8 if risk_level == 'HIGH' else 0.6 if risk_level == 'MODERATE' else 0.4
+            
+            explanation = get_interaction_explanation(mechanism, drug_category, food_category)
+            recommendations = get_recommendations(mechanism, risk_level)
+            
             return {
                 'drug': drug,
                 'food': food,
                 'interaction_predicted': True,
-                'probability': 0.95,
-                'risk_level': 'HIGH',
-                'mechanism': interaction['mechanism'],
-                'explanation': interaction['explanation'],
-                'recommendations': interaction['recommendations'],
-                'known_interaction': True
+                'probability': probability,
+                'risk_level': risk_level,
+                'mechanism': mechanism,
+                'explanation': explanation,
+                'recommendations': recommendations,
+                'known_interaction': False
             }
     
-    # For demo purposes, generate mock predictions
-    # In a real app, this would use the actual ML model
-    risk_levels = ['HIGH', 'MODERATE', 'LOW']
-    mechanisms = [
-        'cyp3a4_inhibition',
-        'vitamin_k_competition',
-        'calcium_chelation',
-        'absorption_interference'
-    ]
-    
-    # Categorize drug and food
-    drug_category = categorize_entity(drug, drug_categories)
-    food_category = categorize_entity(food, food_categories)
-    
-    # Determine interaction probability based on categories
-    interaction_prob = 0.1  # Base probability
-    
-    # Increase probability for certain category combinations
-    if drug_category == 'anticoagulant' and food_category == 'leafy_greens':
-        interaction_prob = 0.9
-        mechanism = 'vitamin_k_competition'
-    elif drug_category == 'statin' and food_category == 'citrus':
-        interaction_prob = 0.85
-        mechanism = 'cyp3a4_inhibition'
-    elif drug_category == 'antibiotic' and food_category == 'dairy':
-        interaction_prob = 0.7
-        mechanism = 'calcium_chelation'
-    else:
-        # Random mechanism for demo
-        mechanism = random.choice(mechanisms)
-        interaction_prob = min(0.9, max(0.1, interaction_prob + random.uniform(-0.2, 0.3)))
-    
-    interaction = interaction_prob > 0.5
-    risk_level = 'HIGH' if interaction_prob > 0.8 else 'MODERATE' if interaction_prob > 0.5 else 'LOW'
-    
-    explanation = get_interaction_explanation(mechanism, drug_category, food_category)
-    recommendations = get_recommendations(mechanism, risk_level)
-    
+    # Fallback: no interaction found
     return {
         'drug': drug,
         'food': food,
-        'interaction_predicted': interaction,
-        'probability': interaction_prob,
-        'risk_level': risk_level,
-        'mechanism': mechanism,
-        'explanation': explanation,
-        'recommendations': recommendations,
+        'interaction_predicted': False,
+        'probability': 0.1,
+        'risk_level': 'LOW',
+        'mechanism': 'unknown',
+        'explanation': f"No known interaction between {drug} and {food} found in our database.",
+        'recommendations': "Monitor for any unexpected effects. Consult healthcare provider if concerned.",
         'known_interaction': False
     }
-
 def categorize_entity(name, categories):
     """Categorize a drug or food based on name"""
     name_lower = name.lower()

@@ -4,87 +4,456 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Drug-Food Interaction Predictor</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 40px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            font-weight: 700;
+        }
+        
+        .header p {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+        
+        .form-container {
+            padding: 40px;
+        }
+        
+        .form-group {
+            margin-bottom: 30px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #333;
+            font-size: 1.1rem;
+        }
+        
+        .form-group select {
+            width: 100%;
+            padding: 15px;
+            border: 2px solid #e1e5e9;
+            border-radius: 10px;
+            font-size: 1rem;
+            background: white;
+            transition: all 0.3s ease;
+        }
+        
+        .form-group select:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+        
+        .search-box {
+            position: relative;
+            margin-bottom: 10px;
+        }
+        
+        .search-box input {
+            width: 100%;
+            padding: 12px 40px 12px 15px;
+            border: 2px solid #e1e5e9;
+            border-radius: 8px;
+            font-size: 1rem;
+            transition: all 0.3s ease;
+        }
+        
+        .search-box input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+        
+        .search-icon {
+            position: absolute;
+            right: 15px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #999;
+        }
+        
+        .submit-btn {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-top: 20px;
+        }
+        
+        .submit-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(102, 126, 234, 0.3);
+        }
+        
+        .submit-btn:active {
+            transform: translateY(0);
+        }
+        
+        .results {
+            margin-top: 40px;
+            padding: 30px;
+            background: #f8f9fa;
+            border-radius: 15px;
+            border-left: 5px solid #667eea;
+        }
+        
+        .results h3 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 1.5rem;
+        }
+        
+        .result-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 0;
+            border-bottom: 1px solid #e1e5e9;
+        }
+        
+        .result-item:last-child {
+            border-bottom: none;
+        }
+        
+        .result-label {
+            font-weight: 600;
+            color: #555;
+        }
+        
+        .result-value {
+            color: #333;
+        }
+        
+        .interaction-badge {
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+        
+        .interaction-yes {
+            background: #fee;
+            color: #c53030;
+        }
+        
+        .interaction-no {
+            background: #f0fff4;
+            color: #22543d;
+        }
+        
+        .risk-badge {
+            padding: 6px 12px;
+            border-radius: 15px;
+            font-weight: 600;
+            font-size: 0.8rem;
+            text-transform: uppercase;
+        }
+        
+        .risk-high {
+            background: #fed7d7;
+            color: #c53030;
+        }
+        
+        .risk-medium {
+            background: #feebc8;
+            color: #c05621;
+        }
+        
+        .risk-low {
+            background: #c6f6d5;
+            color: #22543d;
+        }
+        
+        .probability-bar {
+            width: 200px;
+            height: 20px;
+            background: #e2e8f0;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        
+        .probability-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #22543d 0%, #c53030 100%);
+            border-radius: 10px;
+            transition: width 0.5s ease;
+        }
+        
+        @media (max-width: 768px) {
+            .container {
+                margin: 10px;
+                border-radius: 15px;
+            }
+            
+            .header {
+                padding: 30px 20px;
+            }
+            
+            .header h1 {
+                font-size: 2rem;
+            }
+            
+            .form-container {
+                padding: 30px 20px;
+            }
+            
+            .result-item {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            
+            .result-value {
+                margin-top: 5px;
+            }
+            
+            .probability-bar {
+                width: 100%;
+                margin-top: 10px;
+            }
+        }
+    </style>
 </head>
 <body>
     <div class="container">
-        <header>
-            <h1>Drug-Food Interaction Predictor</h1>
-            <p>Check potential interactions between medications and foods</p>
-        </header>
-
-        <main>
-            <form method="POST" action="/" id="interaction-form">
-                <div class="input-section">
-                    <div class="input-group">
-                        <label for="drug-select">Select a Drug:</label>
-                        <select id="drug-select" name="drug" class="custom-select" required>
-                            <option value="">-- Select a drug --</option>
-                            {% for drug in drugs %}
-                                <option value="{{ drug }}" {% if result and result.drug == drug %}selected{% endif %}>{{ drug }}</option>
-                            {% endfor %}
-                        </select>
+        <div class="header">
+            <h1>🧬 Drug-Food Interaction Predictor</h1>
+            <p>Predict potential interactions between drugs and foods using AI</p>
+        </div>
+        
+        <div class="form-container">
+            <form method="POST">
+                <div class="form-group">
+                    <label for="drug">Select Drug:</label>
+                    <div class="search-box">
+                        <input type="text" id="drug-search" placeholder="Search for a drug..." onkeyup="filterOptions('drug')">
+                        <span class="search-icon">🔍</span>
                     </div>
-                    
-                    <div class="input-group">
-                        <label for="food-select">Select a Food:</label>
-                        <select id="food-select" name="food" class="custom-select" required>
-                            <option value="">-- Select a food --</option>
-                            {% for food in foods %}
-                                <option value="{{ food }}" {% if result and result.food == food %}selected{% endif %}>{{ food }}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                    
-                    <button type="submit" class="primary-btn">Check Interaction</button>
+                    <select name="drug" id="drug" required>
+                        <option value="">-- Choose a drug --</option>
+                        {% for drug in drugs %}
+                        <option value="{{ drug }}" {% if request.form.drug == drug %}selected{% endif %}>
+                            {{ drug|title }}
+                        </option>
+                        {% endfor %}
+                    </select>
                 </div>
+                
+                <div class="form-group">
+                    <label for="food">Select Food:</label>
+                    <div class="search-box">
+                        <input type="text" id="food-search" placeholder="Search for a food..." onkeyup="filterOptions('food')">
+                        <span class="search-icon">🔍</span>
+                    </div>
+                    <select name="food" id="food" required>
+                        <option value="">-- Choose a food --</option>
+                        {% for food in foods %}
+                        <option value="{{ food }}" {% if request.form.food == food %}selected{% endif %}>
+                            {{ food|title }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                
+                <button type="submit" class="submit-btn">
+                    Predict Interaction
+                </button>
             </form>
             
             {% if result %}
-            <div class="result-section" id="result-section">
-                <div class="result-card">
-                    <h2>Interaction Result</h2>
-                    <div class="result-content">
-                        <p><strong>Drug:</strong> {{ result.drug }}</p>
-                        <p><strong>Food:</strong> {{ result.food }}</p>
-                        <p><strong>Interaction:</strong> {{ 'Yes' if result.interaction_predicted else 'No' }}</p>
-                        <p><strong>Probability:</strong> {{ (result.probability * 100)|round(1) }}%</p>
-                    </div>
+            <div class="results" id="results">
+                <h3>🔬 Prediction Results</h3>
+                
+                <div class="result-item">
+                    <span class="result-label">Drug:</span>
+                    <span class="result-value">{{ result.drug|title }}</span>
                 </div>
                 
-                <div class="risk-section">
-                    <h3>Risk Analysis</h3>
-                    <div class="risk-content">
-                        {% if result.risk_level == 'HIGH' %}
-                            <div class="high-risk">High Risk: {{ result.mechanism.replace('_', ' ') }}</div>
-                        {% elif result.risk_level == 'MODERATE' %}
-                            <div class="moderate-risk">Moderate Risk: {{ result.mechanism.replace('_', ' ') }}</div>
-                        {% elif result.risk_level == 'LOW' %}
-                            <div class="low-risk">Low Risk: {{ result.mechanism.replace('_', ' ') }}</div>
-                        {% else %}
-                            <p>Risk Level: {{ result.risk_level }}</p>
-                        {% endif %}
-                    </div>
+                <div class="result-item">
+                    <span class="result-label">Food:</span>
+                    <span class="result-value">{{ result.food|title }}</span>
                 </div>
                 
-                <div class="explanation-section">
-                    <h3>Explanation</h3>
-                    <div class="explanation-content">
-                        <p><strong>Drug Category:</strong> {{ result.drug_category }}</p>
-                        <p><strong>Food Category:</strong> {{ result.food_category }}</p>
-                        <p><strong>Mechanism:</strong> {{ result.mechanism.replace('_', ' ') }}</p>
-                        <p><strong>Risk Level:</strong> {{ result.risk_level }}</p>
-                    </div>
+                <div class="result-item">
+                    <span class="result-label">Interaction Predicted:</span>
+                    <span class="result-value">
+                        <span class="interaction-badge {% if result.interaction_predicted %}interaction-yes{% else %}interaction-no{% endif %}">
+                            {% if result.interaction_predicted %}⚠️ Yes{% else %}✅ No{% endif %}
+                        </span>
+                    </span>
+                </div>
+                
+                <div class="result-item">
+                    <span class="result-label">Confidence:</span>
+                    <span class="result-value">
+                        <div class="probability-bar">
+                            <div class="probability-fill" style="width: {{ (result.probability * 100)|round(1) }}%"></div>
+                        </div>
+                        {{ (result.probability * 100)|round(1) }}%
+                    </span>
+                </div>
+                
+                <div class="result-item">
+                    <span class="result-label">Drug Category:</span>
+                    <span class="result-value">{{ result.drug_category|title }}</span>
+                </div>
+                
+                <div class="result-item">
+                    <span class="result-label">Food Category:</span>
+                    <span class="result-value">{{ result.food_category|title }}</span>
+                </div>
+                
+                <div class="result-item">
+                    <span class="result-label">Mechanism:</span>
+                    <span class="result-value">{{ result.mechanism|title }}</span>
+                </div>
+                
+                <div class="result-item">
+                    <span class="result-label">Risk Level:</span>
+                    <span class="result-value">
+                        <span class="risk-badge risk-{{ result.risk_level.lower() }}">
+                            {{ result.risk_level }}
+                        </span>
+                    </span>
                 </div>
             </div>
             {% endif %}
-        </main>
-        
-        <footer>
-            <p>Drug-Food Interaction Predictor v2.0</p>
-        </footer>
+        </div>
     </div>
-    
-    <script src="{{ url_for('static', filename='js/script.js') }}"></script>
+
+    <script>
+        function filterOptions(type) {
+            var searchInput = document.getElementById(type + '-search');
+            var select = document.getElementById(type);
+            
+            if (!searchInput || !select) return;
+            
+            var filter = searchInput.value.toLowerCase();
+            
+            // Show all options first
+            for (var i = 0; i < select.options.length; i++) {
+                select.options[i].style.display = '';
+            }
+            
+            // Hide options that don't match
+            for (var i = 1; i < select.options.length; i++) { // Start from 1 to skip the default option
+                var option = select.options[i];
+                if (option.text.toLowerCase().indexOf(filter) === -1) {
+                    option.style.display = 'none';
+                } else {
+                    option.style.display = '';
+                }
+            }
+            
+            // Auto-select if there's an exact match
+            if (filter) {
+                for (var i = 1; i < select.options.length; i++) {
+                    var option = select.options[i];
+                    if (option.text.toLowerCase() === filter) {
+                        select.selectedIndex = i;
+                        break;
+                    }
+                }
+            }
+        }
+        
+        // Allow search input to update select
+        document.addEventListener('DOMContentLoaded', function() {
+            var drugSearch = document.getElementById('drug-search');
+            var foodSearch = document.getElementById('food-search');
+            var drugSelect = document.getElementById('drug');
+            var foodSelect = document.getElementById('food');
+            
+            if (drugSearch && drugSelect) {
+                drugSearch.addEventListener('input', function() {
+                    var value = this.value.toLowerCase();
+                    
+                    // Find matching option
+                    for (var i = 1; i < drugSelect.options.length; i++) {
+                        if (drugSelect.options[i].text.toLowerCase() === value) {
+                            drugSelect.selectedIndex = i;
+                            break;
+                        }
+                    }
+                });
+                
+                // Update search box when select changes
+                drugSelect.addEventListener('change', function() {
+                    drugSearch.value = this.value;
+                });
+            }
+            
+            if (foodSearch && foodSelect) {
+                foodSearch.addEventListener('input', function() {
+                    var value = this.value.toLowerCase();
+                    
+                    // Find matching option
+                    for (var i = 1; i < foodSelect.options.length; i++) {
+                        if (foodSelect.options[i].text.toLowerCase() === value) {
+                            foodSelect.selectedIndex = i;
+                            break;
+                        }
+                    }
+                });
+                
+                // Update search box when select changes
+                foodSelect.addEventListener('change', function() {
+                    foodSearch.value = this.value;
+                });
+            }
+        });
+        
+        // Scroll to results if needed
+        var shouldScroll = {{ 'true' if scroll_to_results else 'false' }};
+        if (shouldScroll) {
+            setTimeout(function() {
+                var resultsElement = document.getElementById('results');
+                if (resultsElement) {
+                    resultsElement.scrollIntoView({ 
+                        behavior: 'smooth',
+                        block: 'start'
+                    });
+                }
+            }, 100);
+        }
+    </script>
 </body>
 </html>

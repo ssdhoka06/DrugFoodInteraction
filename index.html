@@ -68,23 +68,29 @@
                 <form id="interactionForm" class="interaction-form">
                     <div class="form-row">
                         <div class="form-group">
-                            <label for="drug"><i class="fas fa-prescription-bottle-alt"></i> Medication</label>
+                            <!-- <label for="drug"><i class="fas fa-prescription-bottle-alt"></i> Medication</label>
                             <select id="drug" class="search-select" style="width: 100%">
                                 <option value="">Select a medication...</option>
                                 {% for drug in drugs %}
                                 <option value="{{ drug.value }}">{{ drug.label }}</option>
                                 {% endfor %}
-                            </select>
+                            </select> -->
+                            <select id="drug" class="search-select" style="width: 100%">
+    <option value="">Select a medication...</option>
+</select>
                         </div>
                         
                         <div class="form-group">
                             <label for="food"><i class="fas fa-utensils"></i> Food/Supplement</label>
-                            <select id="food" class="search-select" style="width: 100%">
+                            <!-- <select id="food" class="search-select" style="width: 100%">
                                 <option value="">Select a food...</option>
                                 {% for food in foods %}
                                 <option value="{{ food.value }}">{{ food.label }}</option>
                                 {% endfor %}
-                            </select>
+                            </select> -->
+                            <select id="food" class="search-select" style="width: 100%">
+    <option value="">Select a food...</option>
+</select>
                         </div>
                     </div>
                     
@@ -443,7 +449,7 @@
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
     <script src="{{ url_for('static', filename='js/script.js') }}"></script>
-    <script>
+    <!-- <script>
     $(document).ready(function() {
         // Initialize Select2 dropdowns
         $('.search-select').select2({
@@ -498,6 +504,6 @@
             `);
         });
     });
-    </script>
+    </script> -->
 </body>
 </html>

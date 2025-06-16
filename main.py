@@ -8,7 +8,7 @@ XAI_CONFIG = {
     'enable_local_explanations': True,
     'cache_explanations': True  # Cache explanations for repeated requests
 }
-import os
+import json
 import sys
 from datetime import datetime
 import pandas as pd
@@ -60,29 +60,6 @@ except ImportError:
     print("⚠️ XGBoost not available. Skipping XGBoost model.")
     XGBOOST_AVAILABLE = False
 
-# Install gdown for Google Drive downloads
-try:
-    import gdown
-except ImportError:
-    print("Installing gdown...")
-    import subprocess
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "gdown"])
-    import gdown
-
-# Google Drive file ID and URL
-file_id = "1IhAkCHqs2FUDX9rzkZT12ov1xFweKEda"
-download_url = f"https://drive.google.com/uc?export=download&id={file_id}"
-data_file = "balanced_drug_food_interactions.csv"
-
-# Download the file from Google Drive if not already present
-if not os.path.exists(data_file):
-    print(f"Downloading data from Google Drive (file ID: {file_id})...")
-    try:
-        gdown.download(download_url, data_file, quiet=False)
-        print("✅ Data downloaded successfully")
-    except Exception as e:
-        print(f"⚠️ Download failed: {e}. Will try to load from local or create sample data.")
-
 # XAI Libraries
 try:
     import shap
@@ -118,9 +95,9 @@ print("=" * 80)
 print("\n📋 PHASE 1: ENHANCED DATA PREPROCESSING")
 print("-" * 40)
 
-def load_and_clean_foodrugs(filepath='balanced_drug_food_interactions.csv'):  # CHANGED FILE PATH HERE
+def load_and_clean_foodrugs(filepath='/Users/sachidhoka/Desktop/food-drug interactions.csv'):
     """Load and clean FooDrugs dataset with enhanced preprocessing"""
-    print(f"Loading FooDrugs dataset from {filepath}...")
+    print("Loading FooDrugs dataset...")
     
     try:
         for encoding in ['utf-8', 'latin-1', 'cp1252']:
@@ -1802,135 +1779,3 @@ except Exception as e:
     print(f"⚠️ Could not save model: {str(e)}")
 
 print("\n🚀 Enhanced Drug-Food Interaction Predictor Complete! 🚀")
-
-# =============================================
-# 🚀 STREAMLIT APP INTEGRATION
-# =============================================
-def run_streamlit_app():
-    import streamlit as st
-    from datetime import datetime
-    
-    st.set_page_config(
-        page_title="Drug-Food Interaction Predictor",
-        page_icon="💊",
-        layout="wide"
-    )
-    
-    # Load model with caching
-    @st.cache_resource
-    def load_model():
-        try:
-            with open('best_drug_food_interaction_model.pkl', 'rb') as f:
-                return pickle.load(f)
-        except Exception as e:
-            st.error(f"⚠️ Model loading failed: {str(e)}")
-            return None
-    
-    model_package = load_model()
-    
-    if not model_package:
-        st.stop()
-    
-    # Initialize session state
-    if 'predictions' not in st.session_state:
-        st.session_state.predictions = []
-    
-    # App header
-    st.title("💊 Drug-Food Interaction Predictor")
-    st.caption(f"Model Version: {model_package.get('model_version', '1.0')} | "
-               f"Trained: {model_package.get('training_date', 'Unknown')}")
-    
-    # Main interface
-    col1, col2 = st.columns(2)
-    drug = col1.text_input("Drug Name (e.g., Warfarin):", "warfarin")
-    food = col2.text_input("Food/Substance (e.g., Spinach):", "spinach")
-    
-    # Add patient context
-    with st.expander("➕ Patient Context (Optional)"):
-        age = st.slider("Age:", 1, 100, 30)
-        gender = st.radio("Gender:", ["Male", "Female", "Other"])
-        conditions = st.multiselect("Health Conditions:", [
-            "Diabetes", "Hypertension", "Liver Disease", 
-            "Kidney Disease", "Heart Condition"
-        ])
-    
-    # Prediction button
-    if st.button("🔍 Check Interaction", use_container_width=True):
-        with st.spinner("Analyzing potential interaction..."):
-            result = predict_new_interaction(
-                drug, 
-                food,
-                model=model_package['model'],
-                drug_categories_=model_package['drug_categories'],
-                food_categories_=model_package['food_categories'],
-                high_risk_interactions_=model_package['high_risk_interactions']
-            )
-            
-            # Add patient context to result
-            result['patient'] = {
-                'age': age,
-                'gender': gender,
-                'conditions': conditions
-            }
-            st.session_state.predictions.append(result)
-    
-    # Display results
-    if st.session_state.predictions:
-        st.divider()
-        st.subheader("📊 Prediction Results")
-        
-        for result in st.session_state.predictions[-3:]:  # Show last 3
-            risk_color = {
-                "HIGH": "red",
-                "MODERATE": "orange",
-                "LOW": "green"
-            }.get(result['risk_level'], "gray")
-            
-            with st.container(border=True):
-                cols = st.columns([1, 2])
-                cols[0].subheader(f"💊 {result['drug'].title()} + 🍎 {result['food'].title()}")
-                
-                cols[1].markdown(
-                    f"**Risk Level:** :{risk_color}[**{result['risk_level']}**] | "
-                    f"**Probability:** `{float(result['probability']):.0%}`"
-                )
-                
-                # Interaction details
-                st.markdown(f"**Mechanism:** {result['mechanism'].replace('_', ' ').title()}")
-                st.markdown(f"**Categories:** {result['drug_category']} + {result['food_category']}")
-                
-                # Clinical advice
-                if result['risk_level'] == "HIGH":
-                    st.error("🚨 **Clinical Recommendation:** Avoid combination. Consult healthcare provider immediately.")
-                elif result['risk_level'] == "MODERATE":
-                    st.warning("⚠️ **Clinical Recommendation:** Use with caution. Monitor for adverse effects.")
-                else:
-                    st.success("✅ **Clinical Recommendation:** Generally safe. No special precautions needed.")
-                
-                # Patient context
-                if result.get('patient'):
-                    st.caption(f"👤 Patient Context: {result['patient']['age']}yo {result['patient']['gender']} "
-                              f"with {', '.join(result['patient']['conditions']) or 'no conditions'}")
-    
-    # Add footer
-    st.divider()
-    st.caption(f"© {datetime.now().year} Drug-Food Interaction Predictor | For educational purposes only")
-
-# =============================================
-# 🚀 MAIN EXECUTION CONTROL
-# =============================================
-if __name__ == "__main__":
-    # Check if running in Streamlit
-    try:
-        import streamlit as st
-        STREAMLIT_MODE = True
-    except ImportError:
-        STREAMLIT_MODE = False
-    
-    if STREAMLIT_MODE:
-        run_streamlit_app()
-    else:
-        # Run training if not in Streamlit mode
-        print("\n🔍 Starting training process...")
-        # [The original training code executes here]
-        print("\n✅ Training completed! Start Streamlit with: streamlit run your_script.py")

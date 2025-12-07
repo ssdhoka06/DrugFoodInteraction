@@ -5,182 +5,470 @@
     <title>Drug-Food Interaction Predictor | AI-Powered Safety Analysis</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="description" content="AI-powered tool to predict and analyze drug-food interactions with risk assessment and personalized recommendations">
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Select2 CSS -->
     <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+    
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Font Awesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    
+    <!-- AOS Animation Library -->
+    <link href="https://unpkg.com/aos@2.3.1/dist/aos.css" rel="stylesheet">
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: {
+                            50: '#f0f4ff',
+                            100: '#e0e9ff',
+                            200: '#c7d7fe',
+                            300: '#a5b9fc',
+                            400: '#8093f9',
+                            500: '#6366f1',
+                            600: '#4f46e5',
+                            700: '#4338ca',
+                            800: '#3730a3',
+                            900: '#312e81',
+                        },
+                        secondary: {
+                            50: '#fdf4ff',
+                            100: '#fae8ff',
+                            200: '#f5d0fe',
+                            300: '#f0abfc',
+                            400: '#e879f9',
+                            500: '#d946ef',
+                            600: '#c026d3',
+                            700: '#a21caf',
+                            800: '#86198f',
+                            900: '#701a75',
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                        display: ['Poppins', 'sans-serif'],
+                    },
+                    animation: {
+                        'fade-in': 'fadeIn 0.5s ease-in',
+                        'slide-up': 'slideUp 0.5s ease-out',
+                        'slide-down': 'slideDown 0.5s ease-out',
+                        'scale-in': 'scaleIn 0.3s ease-out',
+                        'float': 'float 6s ease-in-out infinite',
+                        'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                    },
+                    keyframes: {
+                        fadeIn: {
+                            '0%': { opacity: '0' },
+                            '100%': { opacity: '1' },
+                        },
+                        slideUp: {
+                            '0%': { transform: 'translateY(20px)', opacity: '0' },
+                            '100%': { transform: 'translateY(0)', opacity: '1' },
+                        },
+                        slideDown: {
+                            '0%': { transform: 'translateY(-20px)', opacity: '0' },
+                            '100%': { transform: 'translateY(0)', opacity: '1' },
+                        },
+                        scaleIn: {
+                            '0%': { transform: 'scale(0.9)', opacity: '0' },
+                            '100%': { transform: 'scale(1)', opacity: '1' },
+                        },
+                        float: {
+                            '0%, 100%': { transform: 'translateY(0px)' },
+                            '50%': { transform: 'translateY(-20px)' },
+                        },
+                    },
+                }
+            }
+        }
+    </script>
+    
+    <style>
+        .gradient-bg {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        
+        .gradient-text {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .glass-effect {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        .select2-container--default .select2-selection--single {
+            height: 48px !important;
+            border: 1px solid #e5e7eb !important;
+            border-radius: 0.75rem !important;
+            padding: 0.5rem 1rem !important;
+            transition: all 0.3s ease !important;
+        }
+        
+        .select2-container--default .select2-selection--single:focus,
+        .select2-container--default.select2-container--focus .select2-selection--single {
+            border-color: #6366f1 !important;
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1) !important;
+        }
+        
+        .select2-container--default .select2-selection--single .select2-selection__rendered {
+            line-height: 48px !important;
+            padding-left: 0 !important;
+        }
+        
+        .select2-container--default .select2-selection--single .select2-selection__arrow {
+            height: 48px !important;
+        }
+        
+        .select2-dropdown {
+            border-radius: 0.75rem !important;
+            border: 1px solid #e5e7eb !important;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1) !important;
+        }
+        
+        .floating-shapes {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            pointer-events: none;
+        }
+        
+        .shape {
+            position: absolute;
+            opacity: 0.05;
+            animation: float 15s ease-in-out infinite;
+        }
+        
+        .shape:nth-child(1) {
+            top: 10%;
+            left: 10%;
+            width: 300px;
+            height: 300px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 50%;
+            animation-delay: 0s;
+        }
+        
+        .shape:nth-child(2) {
+            top: 60%;
+            right: 10%;
+            width: 200px;
+            height: 200px;
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            border-radius: 30% 70% 70% 30% / 30% 30% 70% 70%;
+            animation-delay: 5s;
+        }
+        
+        .shape:nth-child(3) {
+            bottom: 10%;
+            left: 40%;
+            width: 250px;
+            height: 250px;
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            border-radius: 63% 37% 54% 46% / 55% 48% 52% 45%;
+            animation-delay: 10s;
+        }
+    </style>
 </head>
-<body>
-    <!-- Animated Background -->
-    <div class="background-animation">
-        <div class="particles"></div>
-        <div class="particles"></div>
-        <div class="particles"></div>
+<body class="font-sans bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 min-h-screen">
+    
+    <!-- Floating Background Shapes -->
+    <div class="floating-shapes fixed inset-0 -z-10">
+        <div class="shape"></div>
+        <div class="shape"></div>
+        <div class="shape"></div>
     </div>
 
     <!-- Navigation -->
-    <nav class="main-nav">
-        <div class="nav-container">
-            <div class="logo">
-                <i class="fas fa-pills"></i>
-                <span>DFI Predictor</span>
-            </div>
-            <ul class="nav-links">
-                <li><a href="#predictor">Predictor</a></li>
-                <li><a href="#dashboard">Dashboard</a></li>
-                <li><a href="#research">Research</a></li>
-                <li class="auth-buttons">
-                    <button class="btn-login">Login</button>
-                    <button class="btn-signup">Sign Up</button>
-                </li>
-            </ul>
-            <div class="mobile-menu-btn">
-                <i class="fas fa-bars"></i>
+    <nav class="fixed top-0 left-0 right-0 z-50 bg-white/80 backdrop-blur-lg border-b border-gray-200/50 shadow-sm">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center h-20">
+                <!-- Logo -->
+                <div class="flex items-center space-x-3 group cursor-pointer">
+                    <div class="w-12 h-12 bg-gradient-to-br from-primary-500 to-secondary-500 rounded-2xl flex items-center justify-center transform group-hover:rotate-12 transition-transform duration-300">
+                        <i class="fas fa-pills text-white text-xl"></i>
+                    </div>
+                    <div>
+                        <span class="text-2xl font-display font-bold gradient-text">DFI Predictor</span>
+                        <p class="text-xs text-gray-500 font-medium">AI-Powered Safety</p>
+                    </div>
+                </div>
+                
+                <!-- Desktop Navigation -->
+                <div class="hidden md:flex items-center space-x-8">
+                    <a href="#predictor" class="nav-link text-gray-700 hover:text-primary-600 font-medium transition-colors duration-200 relative group">
+                        Predictor
+                        <span class="absolute bottom-0 left-0 w-0 h-0.5 bg-primary-600 group-hover:w-full transition-all duration-300"></span>
+                    </a>
+                    <a href="#dashboard" class="nav-link text-gray-700 hover:text-primary-600 font-medium transition-colors duration-200 relative group">
+                        Dashboard
+                        <span class="absolute bottom-0 left-0 w-0 h-0.5 bg-primary-600 group-hover:w-full transition-all duration-300"></span>
+                    </a>
+                    <a href="#research" class="nav-link text-gray-700 hover:text-primary-600 font-medium transition-colors duration-200 relative group">
+                        Research
+                        <span class="absolute bottom-0 left-0 w-0 h-0.5 bg-primary-600 group-hover:w-full transition-all duration-300"></span>
+                    </a>
+                </div>
+                
+                <!-- Auth Buttons -->
+                <div class="hidden md:flex items-center space-x-3">
+                    <button class="btn-login px-6 py-2.5 text-primary-600 font-semibold hover:bg-primary-50 rounded-xl transition-all duration-200">
+                        Login
+                    </button>
+                    <button class="btn-signup px-6 py-2.5 bg-gradient-to-r from-primary-600 to-secondary-600 text-white font-semibold rounded-xl hover:shadow-lg hover:scale-105 transition-all duration-200">
+                        Sign Up
+                    </button>
+                </div>
+                
+                <!-- Mobile Menu Button -->
+                <button class="md:hidden mobile-menu-btn text-gray-700 hover:text-primary-600 transition-colors">
+                    <i class="fas fa-bars text-2xl"></i>
+                </button>
             </div>
         </div>
     </nav>
 
     <!-- Hero Section -->
-    <header class="hero">
-        <div class="hero-content">
-            <h1>AI-Powered Drug-Food Interaction Predictor</h1>
-            <p class="subtitle">Enhancing medication safety through advanced machine learning and explainable AI</p>
-            <div class="hero-buttons">
-                <a href="#predictor" class="btn-primary">Try Predictor</a>
-                <a href="#how-it-works" class="btn-secondary">Learn More</a>
+    <header class="relative pt-32 pb-20 px-4 sm:px-6 lg:px-8 overflow-hidden">
+        <div class="max-w-7xl mx-auto">
+            <div class="grid lg:grid-cols-2 gap-12 items-center">
+                <!-- Hero Content -->
+                <div class="text-center lg:text-left" data-aos="fade-right">
+                    <div class="inline-flex items-center space-x-2 px-4 py-2 bg-primary-50 rounded-full text-primary-700 text-sm font-semibold mb-6">
+                        <i class="fas fa-sparkles"></i>
+                        <span>Powered by Advanced AI</span>
+                    </div>
+                    <h1 class="text-5xl lg:text-6xl font-display font-bold text-gray-900 mb-6 leading-tight">
+                        AI-Powered <span class="gradient-text">Drug-Food</span> Interaction Predictor
+                    </h1>
+                    <p class="text-xl text-gray-600 mb-8 leading-relaxed">
+                        Enhancing medication safety through advanced machine learning and explainable AI. Get instant, accurate predictions for drug-food interactions.
+                    </p>
+                    <div class="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start">
+                        <a href="#predictor" class="group px-8 py-4 bg-gradient-to-r from-primary-600 to-secondary-600 text-white font-semibold rounded-2xl hover:shadow-2xl hover:scale-105 transition-all duration-300 flex items-center justify-center space-x-2">
+                            <span>Try Predictor</span>
+                            <i class="fas fa-arrow-right group-hover:translate-x-1 transition-transform"></i>
+                        </a>
+                        <a href="#how-it-works" class="px-8 py-4 bg-white text-primary-600 font-semibold rounded-2xl border-2 border-primary-200 hover:border-primary-400 hover:shadow-lg transition-all duration-300 flex items-center justify-center space-x-2">
+                            <i class="fas fa-play-circle"></i>
+                            <span>Learn More</span>
+                        </a>
+                    </div>
+                </div>
+                
+                <!-- Hero Image -->
+                <div class="relative" data-aos="fade-left">
+                    <div class="relative z-10">
+                        <img src="https://images.unsplash.com/photo-1579684385127-1ef15d508118?ixlib=rb-4.0.3&auto=format&fit=crop&w=880&q=80" 
+                             alt="Medical research" 
+                             class="rounded-3xl shadow-2xl w-full">
+                    </div>
+                    <!-- Floating Cards -->
+                    <div class="absolute -top-6 -left-6 bg-white rounded-2xl shadow-xl p-4 animate-float hidden lg:block">
+                        <div class="flex items-center space-x-3">
+                            <div class="w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center">
+                                <i class="fas fa-check text-green-600 text-xl"></i>
+                            </div>
+                            <div>
+                                <p class="text-xs text-gray-500">Accuracy Rate</p>
+                                <p class="text-xl font-bold text-gray-900">98.5%</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="absolute -bottom-6 -right-6 bg-white rounded-2xl shadow-xl p-4 animate-float hidden lg:block" style="animation-delay: 3s;">
+                        <div class="flex items-center space-x-3">
+                            <div class="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
+                                <i class="fas fa-database text-blue-600 text-xl"></i>
+                            </div>
+                            <div>
+                                <p class="text-xs text-gray-500">Database Size</p>
+                                <p class="text-xl font-bold text-gray-900">10K+</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
-        </div>
-        <div class="hero-image">
-            <img src="https://images.unsplash.com/photo-1579684385127-1ef15d508118?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=880&q=80" alt="Medical research illustration">
         </div>
     </header>
 
     <!-- Main Content -->
-    <main class="container">
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-20">
+        
         <!-- Interaction Predictor Section -->
-        <section id="predictor" class="predictor-section">
-            <div class="section-header">
-                <h2>Drug-Food Interaction Predictor</h2>
-                <p>Enter a medication and food item to analyze potential interactions</p>
+        <section id="predictor" class="py-20" data-aos="fade-up">
+            <div class="text-center mb-12">
+                <h2 class="text-4xl lg:text-5xl font-display font-bold text-gray-900 mb-4">
+                    Drug-Food Interaction <span class="gradient-text">Predictor</span>
+                </h2>
+                <p class="text-xl text-gray-600 max-w-3xl mx-auto">
+                    Enter a medication and food item to analyze potential interactions with our AI-powered system
+                </p>
             </div>
             
-            <div class="predictor-card">
-                <form id="interactionForm" class="interaction-form">
-                    <div class="form-row">
-                        <div class="form-group">
-                            <!-- <label for="drug"><i class="fas fa-prescription-bottle-alt"></i> Medication</label>
-                            <select id="drug" class="search-select" style="width: 100%">
-                                <option value="">Select a medication...</option>
-                                {% for drug in drugs %}
-                                <option value="{{ drug.value }}">{{ drug.label }}</option>
-                                {% endfor %}
-                            </select> -->
-                            <select id="drug" class="search-select" style="width: 100%">
-    <option value="">Select a medication...</option>
-</select>
-                        </div>
-                        
-                        <div class="form-group">
-                            <label for="food"><i class="fas fa-utensils"></i> Food/Supplement</label>
-                            <!-- <select id="food" class="search-select" style="width: 100%">
-                                <option value="">Select a food...</option>
-                                {% for food in foods %}
-                                <option value="{{ food.value }}">{{ food.label }}</option>
-                                {% endfor %}
-                            </select> -->
-                            <select id="food" class="search-select" style="width: 100%">
-    <option value="">Select a food...</option>
-</select>
+            <div class="max-w-4xl mx-auto">
+                <div class="bg-white rounded-3xl shadow-2xl overflow-hidden border border-gray-100">
+                    <div class="bg-gradient-to-r from-primary-500 to-secondary-500 p-6">
+                        <div class="flex items-center space-x-3 text-white">
+                            <i class="fas fa-atom text-2xl"></i>
+                            <h3 class="text-2xl font-display font-bold">Interaction Analysis</h3>
                         </div>
                     </div>
                     
-                    <div class="form-actions">
-                        <button type="submit" class="btn-predict">
-                            <i class="fas fa-search"></i> Analyze Interaction
-                        </button>
-                        <button type="button" class="btn-clear">
-                            <i class="fas fa-undo"></i> Clear
-                        </button>
-                    </div>
-                </form>
-                
-                <div id="output" class="prediction-results">
-                    <div class="results-placeholder">
-                        <i class="fas fa-microscope"></i>
-                        <p>Enter a drug and food combination to see interaction analysis</p>
-                    </div>
-                </div>
-            </div>
-        </section>
-
-        <!-- User Dashboard Section -->
-        <section id="dashboard" class="dashboard-section">
-            <div class="section-header">
-                <h2>Personal Dashboard</h2>
-                <p>Manage your medications, view history, and generate reports</p>
-            </div>
-            
-            <div class="dashboard-grid">
-                <!-- Saved Medications -->
-                <div class="dashboard-card">
-                    <div class="card-header">
-                        <i class="fas fa-medkit"></i>
-                        <h3>My Medications</h3>
-                    </div>
-                    <div class="card-content">
-                        <div class="medication-list">
-                            <div class="empty-state">
-                                <i class="fas fa-plus-circle"></i>
-                                <p>Add your medications to track interactions</p>
-                                <button class="btn-add-med">Add Medication</button>
+                    <form id="interactionForm" class="p-8">
+                        <div class="grid md:grid-cols-2 gap-6 mb-8">
+                            <!-- Drug Selection -->
+                            <div class="group">
+                                <label for="drug" class="flex items-center space-x-2 text-gray-700 font-semibold mb-3">
+                                    <div class="w-8 h-8 bg-primary-100 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform">
+                                        <i class="fas fa-prescription-bottle-alt text-primary-600"></i>
+                                    </div>
+                                    <span>Medication</span>
+                                </label>
+                                <select id="drug" class="search-select w-full">
+                                    <option value="">Select a medication...</option>
+                                </select>
+                            </div>
+                            
+                            <!-- Food Selection -->
+                            <div class="group">
+                                <label for="food" class="flex items-center space-x-2 text-gray-700 font-semibold mb-3">
+                                    <div class="w-8 h-8 bg-secondary-100 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform">
+                                        <i class="fas fa-utensils text-secondary-600"></i>
+                                    </div>
+                                    <span>Food/Supplement</span>
+                                </label>
+                                <select id="food" class="search-select w-full">
+                                    <option value="">Select a food...</option>
+                                </select>
                             </div>
                         </div>
-                    </div>
-                </div>
-                
-                <!-- Interaction History -->
-                <div class="dashboard-card">
-                    <div class="card-header">
-                        <i class="fas fa-history"></i>
-                        <h3>Interaction History</h3>
-                    </div>
-                    <div class="card-content">
-                        <div class="history-list">
-                            <div class="empty-state">
+                        
+                        <div class="flex flex-col sm:flex-row gap-4">
+                            <button type="submit" class="btn-predict flex-1 group px-8 py-4 bg-gradient-to-r from-primary-600 to-secondary-600 text-white font-bold rounded-2xl hover:shadow-2xl hover:scale-105 transition-all duration-300 flex items-center justify-center space-x-2">
                                 <i class="fas fa-search"></i>
-                                <p>Your interaction checks will appear here</p>
+                                <span>Analyze Interaction</span>
+                                <i class="fas fa-arrow-right group-hover:translate-x-1 transition-transform"></i>
+                            </button>
+                            <button type="button" class="btn-clear px-8 py-4 bg-gray-100 text-gray-700 font-semibold rounded-2xl hover:bg-gray-200 hover:shadow-lg transition-all duration-300 flex items-center justify-center space-x-2">
+                                <i class="fas fa-undo"></i>
+                                <span>Clear</span>
+                            </button>
+                        </div>
+                    </form>
+                    
+                    <!-- Results Container -->
+                    <div id="output" class="min-h-[300px] bg-gradient-to-br from-gray-50 to-blue-50 p-8">
+                        <div class="results-placeholder flex flex-col items-center justify-center h-full text-center">
+                            <div class="w-24 h-24 bg-primary-100 rounded-3xl flex items-center justify-center mb-6 animate-pulse-slow">
+                                <i class="fas fa-microscope text-primary-600 text-4xl"></i>
                             </div>
+                            <h3 class="text-xl font-semibold text-gray-700 mb-2">Ready to Analyze</h3>
+                            <p class="text-gray-500 max-w-md">
+                                Enter a drug and food combination above to see detailed interaction analysis powered by AI
+                            </p>
                         </div>
                     </div>
                 </div>
-                
-                <!-- Reports -->
-                <div class="dashboard-card">
-                    <div class="card-header">
-                        <i class="fas fa-file-pdf"></i>
-                        <h3>Generate Report</h3>
+            </div>
+        </section>
+
+        <!-- Dashboard Section -->
+        <section id="dashboard" class="py-20" data-aos="fade-up">
+            <div class="text-center mb-12">
+                <h2 class="text-4xl lg:text-5xl font-display font-bold text-gray-900 mb-4">
+                    Personal <span class="gradient-text">Dashboard</span>
+                </h2>
+                <p class="text-xl text-gray-600 max-w-3xl mx-auto">
+                    Manage your medications, view history, and generate comprehensive reports
+                </p>
+            </div>
+            
+            <div class="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
+                <!-- Dashboard Card 1 -->
+                <div class="bg-white rounded-3xl shadow-lg hover:shadow-2xl transition-all duration-300 overflow-hidden group cursor-pointer" data-aos="fade-up" data-aos-delay="0">
+                    <div class="bg-gradient-to-br from-blue-500 to-cyan-500 p-6">
+                        <div class="w-16 h-16 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                            <i class="fas fa-medkit text-white text-3xl"></i>
+                        </div>
+                        <h3 class="text-white font-bold text-xl mb-2">My Medications</h3>
+                        <p class="text-blue-100 text-sm">Track your prescriptions</p>
                     </div>
-                    <div class="card-content">
-                        <div class="report-options">
-                            <p>Create a comprehensive PDF report of your medication interactions</p>
-                            <button class="btn-generate-report">
-                                <i class="fas fa-download"></i> Download PDF Report
+                    <div class="p-6">
+                        <div class="text-center py-8">
+                            <i class="fas fa-plus-circle text-blue-500 text-4xl mb-4"></i>
+                            <p class="text-gray-500 mb-4">Add your first medication</p>
+                            <button class="px-6 py-2 bg-blue-500 text-white font-semibold rounded-xl hover:bg-blue-600 transition-colors">
+                                Add Medication
                             </button>
                         </div>
                     </div>
                 </div>
                 
-                <!-- Meal Plan Checker -->
-                <div class="dashboard-card">
-                    <div class="card-header">
-                        <i class="fas fa-utensils"></i>
-                        <h3>Meal Plan Checker</h3>
+                <!-- Dashboard Card 2 -->
+                <div class="bg-white rounded-3xl shadow-lg hover:shadow-2xl transition-all duration-300 overflow-hidden group cursor-pointer" data-aos="fade-up" data-aos-delay="100">
+                    <div class="bg-gradient-to-br from-purple-500 to-pink-500 p-6">
+                        <div class="w-16 h-16 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                            <i class="fas fa-history text-white text-3xl"></i>
+                        </div>
+                        <h3 class="text-white font-bold text-xl mb-2">History</h3>
+                        <p class="text-purple-100 text-sm">View past analyses</p>
                     </div>
-                    <div class="card-content">
-                        <div class="meal-checker">
-                            <p>Check your meal plan against your medications</p>
-                            <button class="btn-check-meal">
-                                <i class="fas fa-search-plus"></i> Analyze Meal Plan
+                    <div class="p-6">
+                        <div class="text-center py-8">
+                            <i class="fas fa-search text-purple-500 text-4xl mb-4"></i>
+                            <p class="text-gray-500">Your searches appear here</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Dashboard Card 3 -->
+                <div class="bg-white rounded-3xl shadow-lg hover:shadow-2xl transition-all duration-300 overflow-hidden group cursor-pointer" data-aos="fade-up" data-aos-delay="200">
+                    <div class="bg-gradient-to-br from-orange-500 to-red-500 p-6">
+                        <div class="w-16 h-16 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                            <i class="fas fa-file-pdf text-white text-3xl"></i>
+                        </div>
+                        <h3 class="text-white font-bold text-xl mb-2">Reports</h3>
+                        <p class="text-orange-100 text-sm">Generate PDF reports</p>
+                    </div>
+                    <div class="p-6">
+                        <div class="text-center py-8">
+                            <p class="text-gray-500 mb-4">Create comprehensive reports</p>
+                            <button class="px-6 py-2 bg-orange-500 text-white font-semibold rounded-xl hover:bg-orange-600 transition-colors flex items-center space-x-2 mx-auto">
+                                <i class="fas fa-download"></i>
+                                <span>Download PDF</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Dashboard Card 4 -->
+                <div class="bg-white rounded-3xl shadow-lg hover:shadow-2xl transition-all duration-300 overflow-hidden group cursor-pointer" data-aos="fade-up" data-aos-delay="300">
+                    <div class="bg-gradient-to-br from-green-500 to-teal-500 p-6">
+                        <div class="w-16 h-16 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                            <i class="fas fa-utensils text-white text-3xl"></i>
+                        </div>
+                        <h3 class="text-white font-bold text-xl mb-2">Meal Plan</h3>
+                        <p class="text-green-100 text-sm">Check meal compatibility</p>
+                    </div>
+                    <div class="p-6">
+                        <div class="text-center py-8">
+                            <p class="text-gray-500 mb-4">Analyze your meal plan</p>
+                            <button class="px-6 py-2 bg-green-500 text-white font-semibold rounded-xl hover:bg-green-600 transition-colors flex items-center space-x-2 mx-auto">
+                                <i class="fas fa-search-plus"></i>
+                                <span>Analyze</span>
                             </button>
                         </div>
                     </div>
@@ -188,17 +476,22 @@
             </div>
         </section>
 
-        <!-- Research Updates Section -->
-        <section id="research" class="research-section">
-            <div class="section-header">
-                <h2>Latest Research & Alerts</h2>
-                <p>Stay updated with the newest findings in drug-food interactions</p>
+        <!-- Research Section -->
+        <section id="research" class="py-20" data-aos="fade-up">
+            <div class="text-center mb-12">
+                <h2 class="text-4xl lg:text-5xl font-display font-bold text-gray-900 mb-4">
+                    Latest Research & <span class="gradient-text">Alerts</span>
+                </h2>
+                <p class="text-xl text-gray-600 max-w-3xl mx-auto">
+                    Stay updated with the newest findings in drug-food interactions
+                </p>
             </div>
             
-            <div class="research-filters">
-                <div class="filter-group">
-                    <label for="research-category">Filter by:</label>
-                    <select id="research-category">
+            <!-- Research Filters -->
+            <div class="bg-white rounded-2xl shadow-lg p-6 mb-8 flex flex-col md:flex-row gap-4 items-center justify-between">
+                <div class="flex items-center space-x-4 w-full md:w-auto">
+                    <label class="font-semibold text-gray-700">Filter by:</label>
+                    <select class="px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-primary-500 focus:outline-none transition-colors">
                         <option value="all">All Categories</option>
                         <option value="antibiotics">Antibiotics</option>
                         <option value="anticoagulants">Anticoagulants</option>
@@ -207,240 +500,364 @@
                     </select>
                 </div>
                 
-                <div class="search-group">
-                    <input type="text" placeholder="Search research updates...">
-                    <button><i class="fas fa-search"></i></button>
+                <div class="flex w-full md:w-auto">
+                    <input type="text" placeholder="Search research updates..." 
+                           class="flex-1 px-4 py-2 border-2 border-gray-200 rounded-l-xl focus:border-primary-500 focus:outline-none transition-colors">
+                    <button class="px-6 py-2 bg-primary-600 text-white rounded-r-xl hover:bg-primary-700 transition-colors">
+                        <i class="fas fa-search"></i>
+                    </button>
                 </div>
             </div>
             
-            <div class="research-grid">
-                <!-- Research cards will be populated dynamically -->
-                <div class="research-card">
-                    <div class="research-badge fda-alert">FDA Alert</div>
-                    <div class="research-date">June 15, 2023</div>
-                    <h3 class="research-title">New Warning: Grapefruit and Statins</h3>
-                    <p class="research-excerpt">FDA updates warning for simvastatin and grapefruit juice interaction risk...</p>
-                    <div class="research-footer">
-                        <span class="research-category">Cardiovascular</span>
-                        <button class="btn-read-more">Read More</button>
+            <!-- Research Cards Grid -->
+            <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+                <!-- Research Card 1 -->
+                <div class="bg-white rounded-3xl shadow-lg hover:shadow-2xl transition-all duration-300 overflow-hidden group" data-aos="fade-up" data-aos-delay="0">
+                    <div class="h-2 bg-gradient-to-r from-red-500 to-pink-500"></div>
+                    <div class="p-6">
+                        <div class="flex items-center justify-between mb-4">
+                            <span class="px-3 py-1 bg-red-100 text-red-600 text-xs font-bold rounded-full">FDA Alert</span>
+                            <span class="text-sm text-gray-500">June 15, 2023</span>
+                        </div>
+                        <h3 class="text-xl font-bold text-gray-900 mb-3 group-hover:text-primary-600 transition-colors">
+                            New Warning: Grapefruit and Statins
+                        </h3>
+                        <p class="text-gray-600 mb-4 line-clamp-3">
+                            FDA updates warning for simvastatin and grapefruit juice interaction risk...
+                        </p>
+                        <div class="flex items-center justify-between">
+                            <span class="px-3 py-1 bg-blue-100 text-blue-600 text-xs font-semibold rounded-full">Cardiovascular</span>
+                            <button class="text-primary-600 font-semibold hover:text-primary-700 flex items-center space-x-1">
+                                <span>Read More</span>
+                                <i class="fas fa-arrow-right text-xs"></i>
+                            </button>
+                        </div>
                     </div>
                 </div>
                 
-                <div class="research-card">
-                    <div class="research-badge new-study">New Study</div>
-                    <div class="research-date">May 28, 2023</div>
-                    <h3 class="research-title">Dairy and Antibiotic Absorption</h3>
-                    <p class="research-excerpt">New meta-analysis confirms calcium interference with tetracycline absorption...</p>
-                    <div class="research-footer">
-                        <span class="research-category">Antibiotics</span>
-                        <button class="btn-read-more">Read More</button>
+                <!-- Research Card 2 -->
+                <div class="bg-white rounded-3xl shadow-lg hover:shadow-2xl transition-all duration-300 overflow-hidden group" data-aos="fade-up" data-aos-delay="100">
+                    <div class="h-2 bg-gradient-to-r from-green-500 to-teal-500"></div>
+                    <div class="p-6">
+                        <div class="flex items-center justify-between mb-4">
+                            <span class="px-3 py-1 bg-green-100 text-green-600 text-xs font-bold rounded-full">New Study</span>
+                            <span class="text-sm text-gray-500">May 28, 2023</span>
+                        </div>
+                        <h3 class="text-xl font-bold text-gray-900 mb-3 group-hover:text-primary-600 transition-colors">
+                            Dairy and Antibiotic Absorption
+                        </h3>
+                        <p class="text-gray-600 mb-4 line-clamp-3">
+                            New meta-analysis confirms calcium interference with tetracycline absorption...
+                        </p>
+                        <div class="flex items-center justify-between">
+                            <span class="px-3 py-1 bg-purple-100 text-purple-600 text-xs font-semibold rounded-full">Antibiotics</span>
+                            <button class="text-primary-600 font-semibold hover:text-primary-700 flex items-center space-x-1">
+                                <span>Read More</span>
+                                <i class="fas fa-arrow-right text-xs"></i>
+                            </button>
+                        </div>
                     </div>
                 </div>
                 
-                <div class="research-card">
-                    <div class="research-badge guideline">Guideline</div>
-                    <div class="research-date">April 10, 2023</div>
-                    <h3 class="research-title">Vitamin K and Warfarin Management</h3>
-                    <p class="research-excerpt">Updated clinical guidelines for consistent vitamin K intake with warfarin therapy...</p>
-                    <div class="research-footer">
-                        <span class="research-category">Anticoagulants</span>
-                        <button class="btn-read-more">Read More</button>
+                <!-- Research Card 3 -->
+                <div class="bg-white rounded-3xl shadow-lg hover:shadow-2xl transition-all duration-300 overflow-hidden group" data-aos="fade-up" data-aos-delay="200">
+                    <div class="h-2 bg-gradient-to-r from-blue-500 to-indigo-500"></div>
+                    <div class="p-6">
+                        <div class="flex items-center justify-between mb-4">
+                            <span class="px-3 py-1 bg-blue-100 text-blue-600 text-xs font-bold rounded-full">Guideline</span>
+                            <span class="text-sm text-gray-500">April 10, 2023</span>
+                        </div>
+                        <h3 class="text-xl font-bold text-gray-900 mb-3 group-hover:text-primary-600 transition-colors">
+                            Vitamin K and Warfarin Management
+                        </h3>
+                        <p class="text-gray-600 mb-4 line-clamp-3">
+                            Updated clinical guidelines for consistent vitamin K intake with warfarin therapy...
+                        </p>
+                        <div class="flex items-center justify-between">
+                            <span class="px-3 py-1 bg-orange-100 text-orange-600 text-xs font-semibold rounded-full">Anticoagulants</span>
+                            <button class="text-primary-600 font-semibold hover:text-primary-700 flex items-center space-x-1">
+                                <span>Read More</span>
+                                <i class="fas fa-arrow-right text-xs"></i>
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
             
-            <div class="research-actions">
-                <button class="btn-load-more">Load More Updates</button>
+            <div class="text-center">
+                <button class="px-8 py-4 bg-white text-primary-600 font-bold rounded-2xl border-2 border-primary-200 hover:border-primary-400 hover:shadow-lg transition-all duration-300">
+                    Load More Updates
+                </button>
             </div>
         </section>
 
         <!-- How It Works Section -->
-        <section id="how-it-works" class="how-it-works">
-            <div class="section-header">
-                <h2>How Our Predictor Works</h2>
-                <p>Advanced AI technology for accurate interaction predictions</p>
+        <section id="how-it-works" class="py-20" data-aos="fade-up">
+            <div class="text-center mb-16">
+                <h2 class="text-4xl lg:text-5xl font-display font-bold text-gray-900 mb-4">
+                    How Our <span class="gradient-text">Predictor</span> Works
+                </h2>
+                <p class="text-xl text-gray-600 max-w-3xl mx-auto">
+                    Advanced AI technology for accurate interaction predictions
+                </p>
             </div>
             
-            <div class="process-steps">
-                <div class="process-step">
-                    <div class="step-number">1</div>
-                    <div class="step-icon">
-                        <i class="fas fa-database"></i>
+            <div class="grid md:grid-cols-2 lg:grid-cols-4 gap-8">
+                <!-- Step 1 -->
+                <div class="relative" data-aos="fade-up" data-aos-delay="0">
+                    <div class="bg-gradient-to-br from-blue-500 to-cyan-500 rounded-3xl p-8 text-white shadow-xl hover:shadow-2xl hover:scale-105 transition-all duration-300">
+                        <div class="absolute -top-6 -left-6 w-16 h-16 bg-white rounded-2xl shadow-xl flex items-center justify-center text-blue-600 font-bold text-2xl">
+                            1
+                        </div>
+                        <div class="w-16 h-16 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center mb-6 mt-4">
+                            <i class="fas fa-database text-4xl"></i>
+                        </div>
+                        <h3 class="text-2xl font-bold mb-3">Database</h3>
+                        <p class="text-blue-100">
+                            Comprehensive analysis of thousands of drug-food interactions from clinical studies
+                        </p>
                     </div>
-                    <h3>Comprehensive Database</h3>
-                    <p>Our system analyzes thousands of known drug-food interactions from clinical studies and pharmacological databases.</p>
                 </div>
                 
-                <div class="process-step">
-                    <div class="step-number">2</div>
-                    <div class="step-icon">
-                        <i class="fas fa-brain"></i>
+                <!-- Step 2 -->
+                <div class="relative" data-aos="fade-up" data-aos-delay="100">
+                    <div class="bg-gradient-to-br from-purple-500 to-pink-500 rounded-3xl p-8 text-white shadow-xl hover:shadow-2xl hover:scale-105 transition-all duration-300">
+                        <div class="absolute -top-6 -left-6 w-16 h-16 bg-white rounded-2xl shadow-xl flex items-center justify-center text-purple-600 font-bold text-2xl">
+                            2
+                        </div>
+                        <div class="w-16 h-16 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center mb-6 mt-4">
+                            <i class="fas fa-brain text-4xl"></i>
+                        </div>
+                        <h3 class="text-2xl font-bold mb-3">AI Analysis</h3>
+                        <p class="text-purple-100">
+                            Machine learning algorithms predict interactions based on drug properties and metabolic pathways
+                        </p>
                     </div>
-                    <h3>Machine Learning Analysis</h3>
-                    <p>Advanced algorithms predict interactions based on drug properties, food components, and metabolic pathways.</p>
                 </div>
                 
-                <div class="process-step">
-                    <div class="step-number">3</div>
-                    <div class="step-icon">
-                        <i class="fas fa-chart-bar"></i>
+                <!-- Step 3 -->
+                <div class="relative" data-aos="fade-up" data-aos-delay="200">
+                    <div class="bg-gradient-to-br from-orange-500 to-red-500 rounded-3xl p-8 text-white shadow-xl hover:shadow-2xl hover:scale-105 transition-all duration-300">
+                        <div class="absolute -top-6 -left-6 w-16 h-16 bg-white rounded-2xl shadow-xl flex items-center justify-center text-orange-600 font-bold text-2xl">
+                            3
+                        </div>
+                        <div class="w-16 h-16 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center mb-6 mt-4">
+                            <i class="fas fa-chart-bar text-4xl"></i>
+                        </div>
+                        <h3 class="text-2xl font-bold mb-3">Risk Assessment</h3>
+                        <p class="text-orange-100">
+                            Categorized by risk level with evidence-based confidence scores
+                        </p>
                     </div>
-                    <h3>Risk Assessment</h3>
-                    <p>Interactions are categorized by risk level (high, moderate, low) with evidence-based confidence scores.</p>
                 </div>
                 
-                <div class="process-step">
-                    <div class="step-number">4</div>
-                    <div class="step-icon">
-                        <i class="fas fa-comment-medical"></i>
+                <!-- Step 4 -->
+                <div class="relative" data-aos="fade-up" data-aos-delay="300">
+                    <div class="bg-gradient-to-br from-green-500 to-teal-500 rounded-3xl p-8 text-white shadow-xl hover:shadow-2xl hover:scale-105 transition-all duration-300">
+                        <div class="absolute -top-6 -left-6 w-16 h-16 bg-white rounded-2xl shadow-xl flex items-center justify-center text-green-600 font-bold text-2xl">
+                            4
+                        </div>
+                        <div class="w-16 h-16 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center mb-6 mt-4">
+                            <i class="fas fa-comment-medical text-4xl"></i>
+                        </div>
+                        <h3 class="text-2xl font-bold mb-3">Explainable AI</h3>
+                        <p class="text-green-100">
+                            Clear explanations in both technical and patient-friendly language
+                        </p>
                     </div>
-                    <h3>Explainable AI</h3>
-                    <p>Clear explanations of interaction mechanisms in both technical and patient-friendly language.</p>
                 </div>
             </div>
         </section>
     </main>
 
     <!-- Footer -->
-    <footer class="main-footer">
-        <div class="footer-container">
-            <div class="footer-about">
-                <div class="footer-logo">
-                    <i class="fas fa-pills"></i>
-                    <span>DFI Predictor</span>
+    <footer class="bg-gray-900 text-white">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
+            <div class="grid md:grid-cols-2 lg:grid-cols-4 gap-12 mb-12">
+                <!-- About -->
+                <div>
+                    <div class="flex items-center space-x-3 mb-6">
+                        <div class="w-12 h-12 bg-gradient-to-br from-primary-500 to-secondary-500 rounded-2xl flex items-center justify-center">
+                            <i class="fas fa-pills text-white text-xl"></i>
+                        </div>
+                        <span class="text-2xl font-display font-bold">DFI Predictor</span>
+                    </div>
+                    <p class="text-gray-400 mb-6">
+                        An AI-powered tool for predicting and analyzing drug-food interactions to enhance medication safety.
+                    </p>
+                    <div class="flex space-x-4">
+                        <a href="#" class="w-10 h-10 bg-gray-800 rounded-xl flex items-center justify-center hover:bg-primary-600 transition-colors">
+                            <i class="fab fa-twitter"></i>
+                        </a>
+                        <a href="#" class="w-10 h-10 bg-gray-800 rounded-xl flex items-center justify-center hover:bg-primary-600 transition-colors">
+                            <i class="fab fa-facebook"></i>
+                        </a>
+                        <a href="#" class="w-10 h-10 bg-gray-800 rounded-xl flex items-center justify-center hover:bg-primary-600 transition-colors">
+                            <i class="fab fa-linkedin"></i>
+                        </a>
+                        <a href="#" class="w-10 h-10 bg-gray-800 rounded-xl flex items-center justify-center hover:bg-primary-600 transition-colors">
+                            <i class="fab fa-github"></i>
+                        </a>
+                    </div>
                 </div>
-                <p class="footer-description">
-                    An AI-powered tool for predicting and analyzing drug-food interactions to enhance medication safety and efficacy.
-                </p>
-                <div class="footer-social">
-                    <a href="#"><i class="fab fa-twitter"></i></a>
-                    <a href="#"><i class="fab fa-facebook"></i></a>
-                    <a href="#"><i class="fab fa-linkedin"></i></a>
-                    <a href="#"><i class="fab fa-github"></i></a>
+                
+                <!-- Resources -->
+                <div>
+                    <h4 class="text-lg font-bold mb-6">Resources</h4>
+                    <ul class="space-y-3">
+                        <li><a href="#" class="text-gray-400 hover:text-white transition-colors">Documentation</a></li>
+                        <li><a href="#" class="text-gray-400 hover:text-white transition-colors">Research Papers</a></li>
+                        <li><a href="#" class="text-gray-400 hover:text-white transition-colors">API Access</a></li>
+                        <li><a href="#" class="text-gray-400 hover:text-white transition-colors">Developer Portal</a></li>
+                    </ul>
+                </div>
+                
+                <!-- Company -->
+                <div>
+                    <h4 class="text-lg font-bold mb-6">Company</h4>
+                    <ul class="space-y-3">
+                        <li><a href="#" class="text-gray-400 hover:text-white transition-colors">About Us</a></li>
+                        <li><a href="#" class="text-gray-400 hover:text-white transition-colors">Team</a></li>
+                        <li><a href="#" class="text-gray-400 hover:text-white transition-colors">Careers</a></li>
+                        <li><a href="#" class="text-gray-400 hover:text-white transition-colors">Contact</a></li>
+                    </ul>
+                </div>
+                
+                <!-- Legal -->
+                <div>
+                    <h4 class="text-lg font-bold mb-6">Legal</h4>
+                    <ul class="space-y-3">
+                        <li><a href="#" class="text-gray-400 hover:text-white transition-colors">Terms of Service</a></li>
+                        <li><a href="#" class="text-gray-400 hover:text-white transition-colors">Privacy Policy</a></li>
+                        <li><a href="#" class="text-gray-400 hover:text-white transition-colors">Disclaimer</a></li>
+                    </ul>
                 </div>
             </div>
             
-            <div class="footer-links">
-                <div class="links-column">
-                    <h4>Resources</h4>
-                    <ul>
-                        <li><a href="#">Documentation</a></li>
-                        <li><a href="#">Research Papers</a></li>
-                        <li><a href="#">API Access</a></li>
-                        <li><a href="#">Developer Portal</a></li>
-                    </ul>
-                </div>
-                
-                <div class="links-column">
-                    <h4>Company</h4>
-                    <ul>
-                        <li><a href="#">About Us</a></li>
-                        <li><a href="#">Team</a></li>
-                        <li><a href="#">Careers</a></li>
-                        <li><a href="#">Contact</a></li>
-                    </ul>
-                </div>
-                
-                <div class="links-column">
-                    <h4>Legal</h4>
-                    <ul>
-                        <li><a href="#">Terms of Service</a></li>
-                        <li><a href="#">Privacy Policy</a></li>
-                        <li><a href="#">Disclaimer</a></li>
-                    </ul>
-                </div>
+            <div class="border-t border-gray-800 pt-8 text-center">
+                <p class="text-gray-400 mb-2">&copy; 2023 Drug-Food Interaction Predictor. All rights reserved.</p>
+                <p class="text-gray-500 text-sm">This tool is for informational purposes only and does not replace professional medical advice.</p>
             </div>
-        </div>
-        
-        <div class="footer-bottom">
-            <p>&copy; 2023 Drug-Food Interaction Predictor. All rights reserved.</p>
-            <p class="footer-note">This tool is for informational purposes only and does not replace professional medical advice.</p>
         </div>
     </footer>
 
     <!-- Login Modal -->
-    <div class="modal" id="loginModal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3>Login to Your Account</h3>
-                <button class="modal-close">&times;</button>
-            </div>
-            <div class="modal-body">
-                <form class="auth-form">
-                    <div class="form-group">
-                        <label for="login-email">Email</label>
-                        <input type="email" id="login-email" placeholder="Enter your email">
+    <div class="modal fixed inset-0 bg-black/50 backdrop-blur-sm hidden items-center justify-center z-50 p-4" id="loginModal">
+        <div class="bg-white rounded-3xl shadow-2xl w-full max-w-md animate-scale-in">
+            <div class="p-8">
+                <div class="flex justify-between items-center mb-6">
+                    <h3 class="text-3xl font-display font-bold gradient-text">Welcome Back</h3>
+                    <button class="modal-close text-gray-400 hover:text-gray-600 text-2xl">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                
+                <form class="space-y-6">
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">Email</label>
+                        <input type="email" class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-primary-500 focus:outline-none transition-colors" placeholder="Enter your email">
                     </div>
-                    <div class="form-group">
-                        <label for="login-password">Password</label>
-                        <input type="password" id="login-password" placeholder="Enter your password">
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">Password</label>
+                        <input type="password" class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-primary-500 focus:outline-none transition-colors" placeholder="Enter your password">
                     </div>
-                    <div class="form-actions">
-                        <button type="submit" class="btn-login-submit">Login</button>
-                        <a href="#" class="forgot-password">Forgot password?</a>
+                    <div class="flex items-center justify-between">
+                        <label class="flex items-center">
+                            <input type="checkbox" class="w-4 h-4 text-primary-600 rounded focus:ring-primary-500">
+                            <span class="ml-2 text-sm text-gray-600">Remember me</span>
+                        </label>
+                        <a href="#" class="text-sm text-primary-600 hover:text-primary-700 font-semibold">Forgot password?</a>
                     </div>
+                    <button type="submit" class="w-full py-3 bg-gradient-to-r from-primary-600 to-secondary-600 text-white font-bold rounded-xl hover:shadow-lg transition-all">
+                        Login
+                    </button>
                 </form>
-                <div class="auth-divider">
-                    <span>or</span>
+                
+                <div class="relative my-6">
+                    <div class="absolute inset-0 flex items-center">
+                        <div class="w-full border-t border-gray-200"></div>
+                    </div>
+                    <div class="relative flex justify-center text-sm">
+                        <span class="px-4 bg-white text-gray-500">Or continue with</span>
+                    </div>
                 </div>
-                <div class="social-login">
-                    <button class="btn-social google">
-                        <i class="fab fa-google"></i> Continue with Google
+                
+                <div class="grid grid-cols-2 gap-4">
+                    <button class="flex items-center justify-center space-x-2 px-4 py-3 bg-white border-2 border-gray-200 rounded-xl hover:border-primary-300 transition-colors">
+                        <i class="fab fa-google text-red-500"></i>
+                        <span class="font-semibold text-gray-700">Google</span>
                     </button>
-                    <button class="btn-social facebook">
-                        <i class="fab fa-facebook-f"></i> Continue with Facebook
+                    <button class="flex items-center justify-center space-x-2 px-4 py-3 bg-white border-2 border-gray-200 rounded-xl hover:border-primary-300 transition-colors">
+                        <i class="fab fa-facebook text-blue-600"></i>
+                        <span class="font-semibold text-gray-700">Facebook</span>
                     </button>
                 </div>
-            </div>
-            <div class="modal-footer">
-                <p>Don't have an account? <a href="#" class="switch-to-signup">Sign up</a></p>
+                
+                <p class="text-center text-gray-600 mt-6">
+                    Don't have an account? 
+                    <a href="#" class="switch-to-signup text-primary-600 font-semibold hover:text-primary-700">Sign up</a>
+                </p>
             </div>
         </div>
     </div>
 
     <!-- Signup Modal -->
-    <div class="modal" id="signupModal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3>Create Your Account</h3>
-                <button class="modal-close">&times;</button>
-            </div>
-            <div class="modal-body">
-                <form class="auth-form">
-                    <div class="form-group">
-                        <label for="signup-name">Full Name</label>
-                        <input type="text" id="signup-name" placeholder="Enter your full name">
+    <div class="modal fixed inset-0 bg-black/50 backdrop-blur-sm hidden items-center justify-center z-50 p-4" id="signupModal">
+        <div class="bg-white rounded-3xl shadow-2xl w-full max-w-md animate-scale-in">
+            <div class="p-8">
+                <div class="flex justify-between items-center mb-6">
+                    <h3 class="text-3xl font-display font-bold gradient-text">Create Account</h3>
+                    <button class="modal-close text-gray-400 hover:text-gray-600 text-2xl">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                
+                <form class="space-y-6">
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">Full Name</label>
+                        <input type="text" class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-primary-500 focus:outline-none transition-colors" placeholder="Enter your full name">
                     </div>
-                    <div class="form-group">
-                        <label for="signup-email">Email</label>
-                        <input type="email" id="signup-email" placeholder="Enter your email">
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">Email</label>
+                        <input type="email" class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-primary-500 focus:outline-none transition-colors" placeholder="Enter your email">
                     </div>
-                    <div class="form-group">
-                        <label for="signup-password">Password</label>
-                        <input type="password" id="signup-password" placeholder="Create a password">
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">Password</label>
+                        <input type="password" class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-primary-500 focus:outline-none transition-colors" placeholder="Create a password">
                     </div>
-                    <div class="form-group">
-                        <label for="signup-confirm">Confirm Password</label>
-                        <input type="password" id="signup-confirm" placeholder="Confirm your password">
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">Confirm Password</label>
+                        <input type="password" class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-primary-500 focus:outline-none transition-colors" placeholder="Confirm your password">
                     </div>
-                    <div class="form-actions">
-                        <button type="submit" class="btn-signup-submit">Create Account</button>
-                    </div>
+                    <button type="submit" class="w-full py-3 bg-gradient-to-r from-primary-600 to-secondary-600 text-white font-bold rounded-xl hover:shadow-lg transition-all">
+                        Create Account
+                    </button>
                 </form>
-                <div class="auth-divider">
-                    <span>or</span>
+                
+                <div class="relative my-6">
+                    <div class="absolute inset-0 flex items-center">
+                        <div class="w-full border-t border-gray-200"></div>
+                    </div>
+                    <div class="relative flex justify-center text-sm">
+                        <span class="px-4 bg-white text-gray-500">Or continue with</span>
+                    </div>
                 </div>
-                <div class="social-login">
-                    <button class="btn-social google">
-                        <i class="fab fa-google"></i> Continue with Google
+                
+                <div class="grid grid-cols-2 gap-4">
+                    <button class="flex items-center justify-center space-x-2 px-4 py-3 bg-white border-2 border-gray-200 rounded-xl hover:border-primary-300 transition-colors">
+                        <i class="fab fa-google text-red-500"></i>
+                        <span class="font-semibold text-gray-700">Google</span>
                     </button>
-                    <button class="btn-social facebook">
-                        <i class="fab fa-facebook-f"></i> Continue with Facebook
+                    <button class="flex items-center justify-center space-x-2 px-4 py-3 bg-white border-2 border-gray-200 rounded-xl hover:border-primary-300 transition-colors">
+                        <i class="fab fa-facebook text-blue-600"></i>
+                        <span class="font-semibold text-gray-700">Facebook</span>
                     </button>
                 </div>
-            </div>
-            <div class="modal-footer">
-                <p>Already have an account? <a href="#" class="switch-to-login">Login</a></p>
+                
+                <p class="text-center text-gray-600 mt-6">
+                    Already have an account? 
+                    <a href="#" class="switch-to-login text-primary-600 font-semibold hover:text-primary-700">Login</a>
+                </p>
             </div>
         </div>
     </div>
@@ -448,62 +865,16 @@
     <!-- Scripts -->
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+    <script src="https://unpkg.com/aos@2.3.1/dist/aos.js"></script>
     <script src="{{ url_for('static', filename='js/script.js') }}"></script>
-    <!-- <script>
-    $(document).ready(function() {
-        // Initialize Select2 dropdowns
-        $('.search-select').select2({
-            placeholder: function() {
-                return $(this).attr('id') === 'drug' ? 'Select a medication...' : 'Select a food...';
-            },
-            allowClear: true,
-            width: 'resolve'
+    <script>
+        // Initialize AOS
+        AOS.init({
+            duration: 800,
+            easing: 'ease-in-out',
+            once: true,
+            offset: 100
         });
-
-        // Form submission handler
-        $('#interactionForm').on('submit', function(e) {
-            e.preventDefault();
-            const drug = $('#drug').val();
-            const food = $('#food').val();
-            
-            if (!drug || !food) {
-                alert('Please select both a medication and a food item');
-                return;
-            }
-            
-            // Here you would make your AJAX call to the backend
-            console.log('Selected drug:', drug);
-            console.log('Selected food:', food);
-            
-            // Example of what you might do with the response
-            $('#output').html(`
-                <div class="result-card">
-                    <h3>Interaction Analysis</h3>
-                    <div class="risk-level high">
-                        <i class="fas fa-exclamation-triangle"></i>
-                        <span>High Risk Interaction</span>
-                    </div>
-                    <p><strong>${drug}</strong> and <strong>${food}</strong> may interact in a way that could be harmful.</p>
-                    <div class="recommendation">
-                        <h4>Recommendation:</h4>
-                        <p>Avoid consuming these together. Consult your healthcare provider for alternatives.</p>
-                    </div>
-                </div>
-            `);
-        });
-
-        // Clear form handler
-        $('.btn-clear').on('click', function() {
-            $('#drug').val('').trigger('change');
-            $('#food').val('').trigger('change');
-            $('#output').html(`
-                <div class="results-placeholder">
-                    <i class="fas fa-microscope"></i>
-                    <p>Enter a drug and food combination to see interaction analysis</p>
-                </div>
-            `);
-        });
-    });
-    </script> -->
+    </script>
 </body>
 </html>

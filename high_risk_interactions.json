@@ -1,0 +1,202 @@
+[
+  {
+    "drug": "warfarin",
+    "food": "spinach",
+    "risk_level": "HIGH",
+    "mechanism": "vitamin_k_competition",
+    "explanation": "Spinach contains high levels of vitamin K, which can counteract the blood-thinning effects of warfarin by promoting clotting factor synthesis.",
+    "recommendations": "Maintain consistent vitamin K intake. Do not drastically increase or decrease spinach consumption. Monitor INR levels closely."
+  },
+  {
+    "drug": "atorvastatin",
+    "food": "grapefruit",
+    "risk_level": "HIGH",
+    "mechanism": "cyp3a4_inhibition",
+    "explanation": "Grapefruit contains compounds that inhibit CYP3A4 enzymes responsible for metabolizing atorvastatin, leading to increased drug levels and risk of side effects.",
+    "recommendations": "Avoid grapefruit and grapefruit juice completely while taking atorvastatin. Consider alternative citrus fruits if desired."
+  },
+  {
+    "drug": "tetracycline",
+    "food": "milk",
+    "risk_level": "HIGH",
+    "mechanism": "calcium_chelation",
+    "explanation": "Calcium in milk binds to tetracycline, forming insoluble complexes that significantly reduce drug absorption.",
+    "recommendations": "Take tetracycline 2 hours before or 4 hours after consuming dairy products. Use water to take the medication."
+  },
+  {
+    "drug": "phenytoin",
+    "food": "alcohol",
+    "risk_level": "HIGH",
+    "mechanism": "enzyme_induction",
+    "explanation": "Chronic alcohol use induces liver enzymes that metabolize phenytoin, potentially reducing drug effectiveness.",
+    "recommendations": "Avoid regular alcohol consumption. Occasional use should be discussed with healthcare provider."
+  },
+  {
+    "drug": "metformin",
+    "food": "alcohol",
+    "risk_level": "MODERATE",
+    "mechanism": "lactic_acidosis_risk",
+    "explanation": "Alcohol can increase the risk of lactic acidosis when combined with metformin, especially in patients with kidney problems.",
+    "recommendations": "Limit alcohol intake. Avoid binge drinking. Discuss alcohol use with healthcare provider."
+  },
+  {
+    "drug": "abemaciclib",
+    "food": "grapefruit",
+    "risk_level": "MODERATE",
+    "mechanism": "unknown",
+    "explanation": "Potential interaction detected between abemaciclib and grapefruit based on training data.",
+    "recommendations": "Consult healthcare provider for personalized advice."
+  },
+  {
+    "drug": "abemaciclib",
+    "food": "carbohydrate",
+    "risk_level": "MODERATE",
+    "mechanism": "unknown",
+    "explanation": "Potential interaction detected between abemaciclib and carbohydrate based on training data.",
+    "recommendations": "Consult healthcare provider for personalized advice."
+  },
+  {
+    "drug": "abemaciclib",
+    "food": "grapefruit",
+    "risk_level": "MODERATE",
+    "mechanism": "unknown",
+    "explanation": "Potential interaction detected between abemaciclib and grapefruit based on training data.",
+    "recommendations": "Consult healthcare provider for personalized advice."
+  },
+  {
+    "drug": "fentanyl",
+    "food": "grapefruit",
+    "risk_level": "MODERATE",
+    "mechanism": "unknown",
+    "explanation": "Potential interaction detected between fentanyl and grapefruit based on training data.",
+    "recommendations": "Consult healthcare provider for personalized advice."
+  },
+  {
+    "drug": "paclitaxel",
+    "food": "grapefruit",
+    "risk_level": "MODERATE",
+    "mechanism": "unknown",
+    "explanation": "Potential interaction detected between paclitaxel and grapefruit based on training data.",
+    "recommendations": "Consult healthcare provider for personalized advice."
+  },
+  {
+    "drug": "docetaxel",
+    "food": "grapefruit",
+    "risk_level": "MODERATE",
+    "mechanism": "unknown",
+    "explanation": "Potential interaction detected between docetaxel and grapefruit based on training data.",
+    "recommendations": "Consult healthcare provider for personalized advice."
+  },
+  {
+    "drug": "opioid analgesics",
+    "food": "ethanol",
+    "risk_level": "MODERATE",
+    "mechanism": "unknown",
+    "explanation": "Potential interaction detected between opioid analgesics and ethanol based on training data.",
+    "recommendations": "Consult healthcare provider for personalized advice."
+  },
+  {
+    "drug": "opioid analgesics",
+    "food": "ethanol",
+    "risk_level": "MODERATE",
+    "mechanism": "unknown",
+    "explanation": "Potential interaction detected between opioid analgesics and ethanol based on training data.",
+    "recommendations": "Consult healthcare provider for personalized advice."
+  },
+  {
+    "drug": "dextromethorphan",
+    "food": "ethanol",
+    "risk_level": "MODERATE",
+    "mechanism": "unknown",
+    "explanation": "Potential interaction detected between dextromethorphan and ethanol based on training data.",
+    "recommendations": "Consult healthcare provider for personalized advice."
+  },
+  {
+    "drug": "tetracycline",
+    "food": "calcium",
+    "risk_level": "MODERATE",
+    "mechanism": "unknown",
+    "explanation": "Potential interaction detected between tetracycline and calcium based on training data.",
+    "recommendations": "Consult healthcare provider for personalized advice."
+  },
+  {
+    "drug": "tetracyclines",
+    "food": "iron",
+    "risk_level": "MODERATE",
+    "mechanism": "unknown",
+    "explanation": "Potential interaction detected between tetracyclines and iron based on training data.",
+    "recommendations": "Consult healthcare provider for personalized advice."
+  },
+  {
+    "drug": "tetracyclines",
+    "food": "salts",
+    "risk_level": "MODERATE",
+    "mechanism": "unknown",
+    "explanation": "Potential interaction detected between tetracyclines and salts based on training data.",
+    "recommendations": "Consult healthcare provider for personalized advice."
+  },
+  {
+    "drug": "ferrous sulfate",
+    "food": "tetracycline",
+    "risk_level": "MODERATE",
+    "mechanism": "unknown",
+    "explanation": "Potential interaction detected between ferrous sulfate and tetracycline based on training data.",
+    "recommendations": "Consult healthcare provider for personalized advice."
+  },
+  {
+    "drug": "tetracycline",
+    "food": "iron",
+    "risk_level": "MODERATE",
+    "mechanism": "unknown",
+    "explanation": "Potential interaction detected between tetracycline and iron based on training data.",
+    "recommendations": "Consult healthcare provider for personalized advice."
+  },
+  {
+    "drug": "doxycycline",
+    "food": "iron",
+    "risk_level": "MODERATE",
+    "mechanism": "unknown",
+    "explanation": "Potential interaction detected between doxycycline and iron based on training data.",
+    "recommendations": "Consult healthcare provider for personalized advice."
+  },
+  {
+    "drug": "ironcontaining",
+    "food": "tetracycline",
+    "risk_level": "MODERATE",
+    "mechanism": "unknown",
+    "explanation": "Potential interaction detected between ironcontaining and tetracycline based on training data.",
+    "recommendations": "Consult healthcare provider for personalized advice."
+  },
+  {
+    "drug": "ascorbic acid",
+    "food": "iron",
+    "risk_level": "MODERATE",
+    "mechanism": "unknown",
+    "explanation": "Potential interaction detected between ascorbic acid and iron based on training data.",
+    "recommendations": "Consult healthcare provider for personalized advice."
+  },
+  {
+    "drug": "acalabrutinib",
+    "food": "grapefruit",
+    "risk_level": "MODERATE",
+    "mechanism": "unknown",
+    "explanation": "Potential interaction detected between acalabrutinib and grapefruit based on training data.",
+    "recommendations": "Consult healthcare provider for personalized advice."
+  },
+  {
+    "drug": "acalabrutinib",
+    "food": "carbohydrate",
+    "risk_level": "MODERATE",
+    "mechanism": "unknown",
+    "explanation": "Potential interaction detected between acalabrutinib and carbohydrate based on training data.",
+    "recommendations": "Consult healthcare provider for personalized advice."
+  },
+  {
+    "drug": "acalabrutinib",
+    "food": "grapefruit",
+    "risk_level": "MODERATE",
+    "mechanism": "unknown",
+    "explanation": "Potential interaction detected between acalabrutinib and grapefruit based on training data.",
+    "recommendations": "Consult healthcare provider for personalized advice."
+  }
+]
